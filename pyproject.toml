@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "swiftcnv"
+version = "0.1.0"
+description = "Fast estimation of Copy Number Variation from tumoral scRNAseq expression data"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "pandas",
+    "scipy",
+    "scikit-learn",
+    "anndata",
+    "matplotlib",
+]
+
+[project.optional-dependencies]
+tutorial = [
+    "scanpy",
+    "ipykernel",
+    "leidenalg",
+    "requests",
+]
+
+authors = [
+  { name = "Adrian Parrilla Mesas", email = "adrianparrilla@vhio.net" },
+  { name = "Sergio Esteban Echeverría", email = "sergioesteban@vhio.net" },
+]
+
+keywords = [
+    "bioinformatics",
+    "cancer",
+    "single-cell",
+    "transcriptomics",
+    "cnv",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+swiftcnv = [
+    "data/**/*.tsv",
+    "data/**/*.h5ad",
+]
+
+[project.scripts]
+swiftcnv = "swiftcnv.cli:main"
+
+[project.urls]
+Repository = "https://github.com/Computational-Immunogenomics/SwiftCNV"
