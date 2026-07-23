@@ -18,14 +18,6 @@ dependencies = [
     "matplotlib",
 ]
 
-[project.optional-dependencies]
-tutorial = [
-    "scanpy",
-    "ipykernel",
-    "leidenalg",
-    "requests",
-]
-
 authors = [
   { name = "Adrian Parrilla Mesas", email = "adrianparrilla@vhio.net" },
   { name = "Sergio Esteban Echeverría", email = "sergioesteban@vhio.net" },
@@ -37,6 +29,14 @@ keywords = [
     "single-cell",
     "transcriptomics",
     "cnv",
+]
+
+[project.optional-dependencies]
+tutorial = [
+    "scanpy",
+    "ipykernel",
+    "leidenalg",
+    "requests",
 ]
 
 [tool.setuptools.packages.find]
