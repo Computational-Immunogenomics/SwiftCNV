@@ -4,3 +4,4 @@ results_my_sample/
 __pycache__
 *.py[cod]
 *.egg-info/
+build/
