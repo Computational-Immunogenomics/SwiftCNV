@@ -62,7 +62,7 @@ def get_cell_order(df, counts, cell_names, column='reference', vals=None, sample
 
 
 def get_gene_order(counts, genes, annotations, **kwargs):
-	if isinstance(annotations, str) and os.path.isfile(annotations):
+	if isinstance(annotations, str):
 		annotations = read_gtf(annotations, **kwargs)
 	gene_order = annotations.loc[annotations['gene'].isin(genes)]
 	if len(gene_order) == 0:
