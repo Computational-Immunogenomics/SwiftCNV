@@ -43,6 +43,7 @@ SwiftCNV can be run from the command line from a h5ad file, but can also be impo
 | `-s`, `--sample-col` | Column in `<cells>`/`<input>.obs` sample IDs for stratification. Default: no samples |
 | `--by-sample` | Substract the mean of the reference cells for each sample instead of all samples together |
 | `--exclude-immune` | Exclude genes names that start with `(HLA-\|IGH\|IGK\|IGL)` to avoid bias from reference immune cells |
+| `--sex-chr` | Include genes from chromosomes X and Y that are excluded by default |
 | `-p`, `--plot` | Plot final heatmap and heatmaps by sample (if provided) |
 | `--hmm` | Perform HMM segmentation of CNV states |
 | `--hmm-by` | Stratification for HMM segmentation (`subcluster`, `sample` or `cell`). Default: `subcluster` |
@@ -60,11 +61,12 @@ A typical call from a cells file would be:
 swiftcnv \
     -i /path/to/adata.h5ad \
     -o /path/to/output \
-    -a /path/to/gene_annotations.gtf.gz \
     -c /path/to/cells.tsv \
+    -a /path/to/gene_annotations.gtf.gz \
     -s sample \
     -p \
-    --hmm
+    --hmm \
+    --exclude-immune
 ```
 
 Where the required cells.tsv file (`-c` / `--cells`) would be:
