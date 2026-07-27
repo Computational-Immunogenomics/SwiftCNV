@@ -389,8 +389,9 @@ class SwiftCNV:
 
 
 def run_from_adata(adata, gtf_file, output_dir=None, cells_file=None, reference_col='reference',
-				   reference_vals=None, read_X=False, sample_col=None, arms_file=None, exclude_immune=False,
-				   plot=False, run_hmm=False, hmm_by='subcluster', n_clusters=3, threads=1, **kwargs):
+				   reference_vals=None, read_X=False, sample_col=None, arms_file=None,
+				   exclude_immune=False, sex_chr=False, plot=False, run_hmm=False,
+				   hmm_by='subcluster', n_clusters=3, threads=1, **kwargs):
 
 	n_steps = 4
 	if plot and output_dir is not None:
@@ -463,7 +464,7 @@ def run_from_adata(adata, gtf_file, output_dir=None, cells_file=None, reference_
 	logger.info(f'[{step}/{n_steps}] Getting gene order...')
 	logger.info(f'    Getting gene_order from GTF: {gtf_file}')
 	counts, gene_order = utils.get_gene_order(counts, genes, gtf_file, arms_path=arms_file,
-											  sex_chr=False, exclude_immune=exclude_immune)
+											  sex_chr=sex_chr, exclude_immune=exclude_immune)
 	logger.info(f'    Subsetting to common genes: {len(gene_order)}')
 
 

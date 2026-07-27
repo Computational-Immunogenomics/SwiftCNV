@@ -31,6 +31,8 @@ def main():
 						help='Column in <cells>/<input>.obs sample IDs for stratification')
 	parser.add_argument('--by-sample', action='store_true', dest='by_sample',
 						help='Substract the mean of the reference cells for each sample instead of all together')
+	parser.add_argument('--sex-chr', action='store_true', dest='sex_chr',
+						help='Include chromosomes X and Y (excluded by default)')
 	parser.add_argument('--exclude-immune', action='store_true', dest='exclude_immune',
 						help='Exclude genes names that start with (HLA-|IGH|IGK|IGL)')
 	parser.add_argument('-p', '--plot', action='store_true', dest='plot',
@@ -63,6 +65,7 @@ def main():
 		read_X=args.read_X,
 		sample_col=args.sample_col,
 		exclude_immune=args.exclude_immune,
+		sex_chr=args.sex_chr,
 		plot=args.plot,
 		run_hmm=args.hmm,
 		hmm_by=args.hmm_by,
