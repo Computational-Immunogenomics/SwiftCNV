@@ -49,6 +49,9 @@ SwiftCNV can be run from the command line from a h5ad file, but can also be impo
 | `--hmm-by` | Stratification for HMM segmentation (`subcluster`, `sample` or `cell`). Default: `subcluster` |
 | `--n-clusters` | Number of clusters for performing HMM segmentation analysis. Default: `3` |
 | `--cutoff` | Remove genes whose mean normalized expression across reference cells is below cutoff. Default: `0.1` |
+| `--min-cells-per-gene` | Remove genes expressed in less cells than this value. Default: `3` |
+| `--genes-window` | Window size for smoothing in genes. Default: 1% of genes (min. 51) if `<bases-window>` is also not defined |
+| `--bases-window` | Window size for smoothing in MB. Default: 30MB if <genes-window> is also not defined |
 | `-t`, `--threads` | Number of threads to use in parallel processes (HMM segmentation and clustering) |
 
 Reference cells can be specified using a TSV file with two columns, cell_name and reference, where the reference column contains TRUE or FALSE to indicate whether each cell is used as a reference. Alternatively, reference cells can be specified by providing the column in adata.obs containing the cell type annotations (--reference-col) and which ones should be used as reference (--reference-value).  Finally, the column identifying the samples must be specified.
