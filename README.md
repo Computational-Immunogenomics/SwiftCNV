@@ -2,6 +2,10 @@
 
 SwiftCNV is a fast and scalable Python implementation of the core [InferCNV](https://github.com/broadinstitute/inferCNV/wiki) algorithm to infer copy number variations (CNVs) from single-cell RNA-seq data. It provides additional features and is designed for seamless interoperability with Anndata objects and Scanpy.
 
+## Documentation
+
+For detailed information and example tutorials, please refer to our [documentation](https://swiftcnv.readthedocs.io/en/latest/).
+
 ## Installation
 
 SwiftCNV can be installed through pip:

@@ -16,6 +16,7 @@ dependencies = [
     "scikit-learn",
     "anndata",
     "matplotlib",
+    "seaborn"
 ]
 
 authors = [
