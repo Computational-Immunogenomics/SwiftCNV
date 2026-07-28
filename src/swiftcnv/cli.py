@@ -61,6 +61,8 @@ def main():
 						format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
 	logging.captureWarnings(True)
 
+	bases_window = args.bases_window if args.bases_window is None else args.bases_window * 1e6
+
 	run_from_adata(
 		adata=args.h5ad_path,
 		output_dir=args.output_dir,
@@ -81,7 +83,7 @@ def main():
 		cutoff=args.cutoff,
 		substract_reference_by_sample=args.by_sample,
 		genes_window=args.genes_window,
-		bases_window=args.bases_window,
+		bases_window=bases_window,
 	)
 
 
