@@ -424,7 +424,7 @@ def run_from_adata(adata, gtf_file, output_dir=None, cells_file=None, reference_
 	    sex_chr : bool
 	        Keep genes from chromosomes X and Y (excluded by default).
 	    exclude_immune : bool
-	        Exclude genes that start with '(HLA-\|IGH\|IGK\|IGL)'.
+	        Exclude genes that start with '(HLA-|IGH|IGK|IGL)'.
 	    plot : bool
 	        Plot heatmap and heatmaps by sample to <output_dir>.
 	    run_hmm : bool

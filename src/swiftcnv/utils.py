@@ -11,6 +11,7 @@ import pandas as pd
 import anndata as ad
 from scipy.cluster.hierarchy import linkage, dendrogram, leaves_list
 from scipy.spatial.distance import pdist
+from scipy.stats import spearmanr
 from sklearn.decomposition import PCA
 from joblib import Parallel, delayed
 import matplotlib.pyplot as plt
@@ -127,7 +128,7 @@ def read_gtf(gtf_path, arms_path=None, sex_chr=False, exclude_immune=False):
 	    sex_chr : bool
 	        Keep genes from chromosomes X and Y (excluded by default)
 	    exclude_immune : bool
-	        Exclude genes that start with '(HLA-\|IGH\|IGK\|IGL)'
+	        Exclude genes that start with '(HLA-|IGH|IGK|IGL)'
 
 	Returns:
 	    pd.DataFrame
@@ -412,6 +413,55 @@ def get_genes_chr_arm(adata, key_obsm='cnv_mat', chr_arms=None):
 	genes = adata.var.loc[adata.var['has_cnv'] & adata.var['chr_arm'].isin(chr_arms)].index.tolist()
 
 	return adata.obsm[key_obsm].loc[:, adata.obsm[key_obsm].columns.isin(genes)]
+
+
+def get_cancer_type_correlation(mat, arms, groups=None, sample_type=None):
+	'''Get correlation scores to HMF gains by arm by cancer type
+	'''
+
+	if sample_type == 'primary':
+		hmf_path = files('swiftcnv.data').joinpath('primary_gains.tsv')
+	elif sample_type == 'metastatis':
+		hmf_path = files('swiftcnv.data').joinpath('metastatic_gains.tsv')
+	elif sample_type is None:
+		hmf_path = files('swiftcnv.data').joinpath('all_gains.tsv')
+	else:
+		raise ValueError(f'sample_type must be None, "primary" or "metastatic", not {sample_type}')
+
+	with hmf_path.open('r', encoding='utf-8') as f:
+		hmf_gains = pd.read_csv(f, sep='\t', index_col=0).drop(columns='n')
+
+	common_arms = np.intersect1d(hmf_gains.columns, arms)
+	valid_arms = np.isin(arms, common_arms)
+	arms = arms[valid_arms]
+	mat = mat[:, valid_arms]
+	hmf_gains = hmf_gains[sorted(common_arms, key=chr_sort_key)]
+	arms_unique = np.unique(arms)
+
+	mat_by_arm = np.empty((mat.shape[0], len(arms_unique)))
+	for a, arm in enumerate(sorted(arms_unique, key=chr_sort_key)):
+		mat_by_arm[:, a] = mat[:, arms == arm].mean(axis=1)
+	
+	if groups is None:
+		mat_mean = mat_by_arm.mean(axis=0)
+		res = [spearmanr(row, mat_mean) for row in hmf_gains.to_numpy()]
+		rhos, pvals = zip(*((r.statistic, r.pvalue) for r in res))
+		rho = pd.Series(rhos, index=hmf_gains.index, name='rho')
+		pval = pd.Series(pvals, index=hmf_gains.index, name='pval')
+	else:
+		rho_dict = {}
+		pval_dict = {}
+		groups_unique = np.unique(groups)
+		for g, group in enumerate(groups_unique):
+			group_mean = mat_by_arm[groups == group, :].mean(axis=0)
+			res = [spearmanr(row, group_mean) for row in hmf_gains.to_numpy()]
+			rhos, pvals = zip(*((r.statistic, r.pvalue) for r in res))
+			rho_dict[group] = rhos
+			pval_dict[group] = pvals
+		rho = pd.DataFrame(rho_dict, index=hmf_gains.index)
+		pval = pd.DataFrame(pval_dict, index=hmf_gains.index)
+
+	return rho, pval
 
 
 
