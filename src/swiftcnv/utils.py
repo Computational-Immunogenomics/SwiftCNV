@@ -9,6 +9,7 @@ from importlib.resources import files
 import numpy as np
 import pandas as pd
 import anndata as ad
+import seaborn as sns
 from scipy.cluster.hierarchy import linkage, dendrogram, leaves_list
 from scipy.spatial.distance import pdist
 from scipy.stats import spearmanr
@@ -206,7 +207,7 @@ def load_chr_arms(arms_path=None):
 		else:
 			arms = pd.read_csv(arms_path, sep='\t', usecols=cols, dtype=dtypes)
 	else:
-		arms_path = files('swiftcnv.data').joinpath('chr_arms.tsv')
+		arms_path = files('swiftcnv.resources').joinpath('chr_arms.tsv')
 		with arms_path.open('r', encoding='utf-8') as f:
 			arms = pd.read_csv(f, sep='\t', usecols=cols, dtype=dtypes)
 	arms.rename(columns={'start': 'start_arm', 'end': 'end_arm'}, inplace=True)
@@ -420,11 +421,11 @@ def get_cancer_type_correlation(mat, arms, groups=None, sample_type=None):
 	'''
 
 	if sample_type == 'primary':
-		hmf_path = files('swiftcnv.data').joinpath('primary_gains.tsv')
+		hmf_path = files('swiftcnv.resources').joinpath('primary_gains.tsv')
 	elif sample_type == 'metastatis':
-		hmf_path = files('swiftcnv.data').joinpath('metastatic_gains.tsv')
+		hmf_path = files('swiftcnv.resources').joinpath('metastatic_gains.tsv')
 	elif sample_type is None:
-		hmf_path = files('swiftcnv.data').joinpath('all_gains.tsv')
+		hmf_path = files('swiftcnv.resources').joinpath('all_gains.tsv')
 	else:
 		raise ValueError(f'sample_type must be None, "primary" or "metastatic", not {sample_type}')
 
@@ -831,6 +832,7 @@ def plot_cnv_multi(mat, ref_cells, regions, groups, output_file, **kwargs):
 
 
 def plot_cnv_summary(adata, groupby, split_by=None, use_rep: str = 'cnv_mat_arms', outdir=None):
+
 	if isinstance(adata.obsm[use_rep], pd.DataFrame):
 		mat_df = adata.obsm[use_rep]
 	else:
@@ -872,10 +874,10 @@ def plot_cnv_summary(adata, groupby, split_by=None, use_rep: str = 'cnv_mat_arms
 	# Dynamic Layout Calculations
 	n_features = plot_data[0][1].shape[1]
 	fig_width = max(15, 0.3 * n_features) 
-	fig_height = (0.3 * total_groups) + (1.5 * n_splits) + 1.5 
+	fig_height = (0.3 * total_groups) + (1.5 * n_splits) + 0.4 
 
 	# Create (n_splits + 1) rows
-	height_ratios = [mat.shape[0] for _, mat in plot_data] + [1.5] 
+	height_ratios = [mat.shape[0] for _, mat in plot_data] + [0.3] 
 
 	fig, axes = plt.subplots(
 		nrows=n_splits + 1, 
@@ -900,11 +902,13 @@ def plot_cnv_summary(adata, groupby, split_by=None, use_rep: str = 'cnv_mat_arms
 			vmax=vmax,
 			center=0,
 			annot=False,
-			linewidths=0.5,  
+			linewidths=0.4,  
 			linecolor='black',   
 			cbar=False, 
 			ax=ax 
 		)
+
+		ax.grid(False)
 
 		for _, spine in ax.spines.items():
 			spine.set_visible(True)
@@ -915,7 +919,7 @@ def plot_cnv_summary(adata, groupby, split_by=None, use_rep: str = 'cnv_mat_arms
 		ax.tick_params(axis='y', labelsize=12)
 		ax.set_ylabel('')
 
-		ax.tick_params(axis='x', which='both', bottom=True, labelbottom=True, labelsize=10, rotation=90)
+		ax.tick_params(axis='x', which='both', bottom=True, labelbottom=True, labelsize=12, rotation=90)
 
 		if split_name is not None:
 			ax.set_title(f'{split_name}', fontsize=14, pad=10)
@@ -926,13 +930,15 @@ def plot_cnv_summary(adata, groupby, split_by=None, use_rep: str = 'cnv_mat_arms
 		cbar_container_ax,
 		width=5.0,  
 		height=0.2, 
-		loc='lower center'
+		loc='upper center'
 	)
 
 	# Add the shared horizontal colorbar into our locked axis dimensions
 	mappable = heatmap_axes[0].collections[0]
 	cbar = fig.colorbar(mappable, cax=fixed_cbar_ax, orientation='horizontal')
 	cbar.ax.tick_params(labelsize=10)
+
+	cbar.ax.grid(False)
 
 	plt.tight_layout()
 
@@ -943,3 +949,43 @@ def plot_cnv_summary(adata, groupby, split_by=None, use_rep: str = 'cnv_mat_arms
 		plt.show()
 
 	plt.close(fig)
+
+
+def plot_cnv_from_adata(adata, cnv_key="cnv_mat", group_keys=None, group=None, **kwargs):
+
+    adata_plot = adata.copy()
+
+    if isinstance(group, str) and group_keys is not None:
+        adata_plot = adata[adata.obs[group_keys[0]] == group] # Only the first group key is considered for groups (normally sample)
+
+    mat = adata_plot.obsm[cnv_key].values
+
+    ref_cells = adata_plot.obs['reference'].values
+
+    if "_arms" in cnv_key:
+        regions = adata_plot.obsm[cnv_key].columns.values
+    else:
+        regions = adata_plot.var.loc[adata_plot.obsm[cnv_key].columns, 'chr_arm']
+
+    if len(regions) != mat.shape[1]:
+        raise ValueError(f"Region length ({len(regions)}) does not match matrix columns ({mat.shape[1]}).")
+
+    plot_kwargs = {}
+    
+    # Handle explicit group_key parameter
+    if group_keys is not None:
+        if isinstance(group_keys, str) and group_keys in adata_plot.obs:
+            plot_kwargs[group_keys] = adata_plot.obs[group_keys].values
+        elif isinstance(group_keys, (list, tuple)):
+            for gk in group_keys:
+                if gk in adata_plot.obs:
+                    plot_kwargs[gk] = adata_plot.obs[gk].values
+
+    # Convert any other string arguments matching adata_plot.obs columns into arrays
+    for k, v in kwargs.items():
+        if isinstance(v, str) and v in adata_plot.obs:
+            plot_kwargs[k] = adata_plot.obs[v].values
+        else:
+            plot_kwargs[k] = v
+
+    plot_cnv(mat, ref_cells, regions, **plot_kwargs)
