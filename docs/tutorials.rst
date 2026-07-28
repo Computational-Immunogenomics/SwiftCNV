@@ -5,4 +5,4 @@ Tutorials
    :maxdepth: 1
    :caption: Contents:
 
-   notebooks/swiftCNV_tutorial.ipynb
+   notebooks/swiftcnv_tutorial.ipynb
