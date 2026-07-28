@@ -31,6 +31,8 @@ def main():
 						help='Column in <cells>/<input>.obs sample IDs for stratification')
 	parser.add_argument('--by-sample', action='store_true', dest='by_sample',
 						help='Substract the mean of the reference cells for each sample instead of all together')
+	parser.add_argument('--sex-chr', action='store_true', dest='sex_chr',
+						help='Include chromosomes X and Y (excluded by default)')
 	parser.add_argument('--exclude-immune', action='store_true', dest='exclude_immune',
 						help='Exclude genes names that start with (HLA-|IGH|IGK|IGL)')
 	parser.add_argument('-p', '--plot', action='store_true', dest='plot',
@@ -41,8 +43,14 @@ def main():
 						choices=['subcluster', 'sample', 'cell'], help='Stratification for HMM segmentation')
 	parser.add_argument('--n-clusters', action='store', dest='n_clusters', type=int, default=3,
 						help='Number of clusters for performing HMM segmentation analysis')
+	parser.add_argument('--min-cells-per-gene', action='store', dest='min_cells_per_gene', type=int, default=3,
+						help='Remove genes expressed in less cells than this value')
 	parser.add_argument('--cutoff', action='store', dest='cutoff', type=float, default=0.1,
 						help='Remove genes whose mean normalized expression across reference cells is below cutoff')
+	parser.add_argument('--genes-window', action='store', dest='genes_window', type=int, default=None,
+						help='Window size for smoothing in genes (Default: 1% of genes (min. 51) if <bases-window> is also not defined)')
+	parser.add_argument('--bases-window', action='store', dest='bases_window', type=float, default=None,
+						help='Window size for smoothing in MB (Default: 30MB if <genes-window> is also not defined)')
 	parser.add_argument('-t', '--threads', action='store', dest='threads', type=int, default=1,
 						help='Number of threads to use in parallel processes (segment cells and clustering by samples)')
 	args = parser.parse_args()
@@ -52,6 +60,8 @@ def main():
 						level=logging.INFO, filemode='w', datefmt='%Y-%m-%d %H:%M:%S',
 						format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
 	logging.captureWarnings(True)
+
+	bases_window = args.bases_window if args.bases_window is None else args.bases_window * 1e6
 
 	run_from_adata(
 		adata=args.h5ad_path,
@@ -63,13 +73,17 @@ def main():
 		read_X=args.read_X,
 		sample_col=args.sample_col,
 		exclude_immune=args.exclude_immune,
+		sex_chr=args.sex_chr,
 		plot=args.plot,
 		run_hmm=args.hmm,
 		hmm_by=args.hmm_by,
 		n_clusters=args.n_clusters,
 		threads=args.threads,
+		min_cells_per_gene=args.min_cells_per_gene,
 		cutoff=args.cutoff,
 		substract_reference_by_sample=args.by_sample,
+		genes_window=args.genes_window,
+		bases_window=bases_window,
 	)
 
 
