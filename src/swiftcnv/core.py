@@ -374,6 +374,10 @@ class SwiftCNV:
 
 
 	def plot(self, groups=None, region_key='chr_arm', **kwargs):
+		'''Helper to run swiftcnv.plot_cnv from a Swiftcnv object
+		that has finished the run. If <groups> is defined, it calls
+		plot_cnv_multi with those groups.
+		'''
 		if hasattr(self.expr, 'toarray'):
 			mat = self.expr.astype(np.float32).toarray()
 		else:
@@ -392,6 +396,62 @@ def run_from_adata(adata, gtf_file, output_dir=None, cells_file=None, reference_
 				   reference_vals=None, read_X=False, sample_col=None, arms_file=None,
 				   exclude_immune=False, sex_chr=False, plot=False, run_hmm=False,
 				   hmm_by='subcluster', n_clusters=3, threads=1, **kwargs):
+	'''Helper for running the SwiftCNV pipeline from an AnnData object or file.
+
+	Parameters:
+	    adata : str or AnnData
+	        Path to input h5ad file or AnnData object.
+	    gtf_file : str or pd.DataFrame
+	        Gene annotations path (.gtf) or dataframe.
+	    output_dir : str
+	        Output dir for writing results and plots (optional).
+	    cells_file : str
+	        Get cell information (cell_name, reference status and samples)
+	        from file. Default: read <adata>.obs.
+	    reference_col : str
+	        Column to get reference status. Default: 'reference'.
+	    reference_vals : list
+	        Values of <reference_col> marked as referece. Default: consider
+	        <reference_col> as bool.
+	    read_X : bool
+	        Read <adata>.X matrix. Default: read <adata.layers['counts']>.
+	    sample_col : str
+	        Column from <cells_file> or <adata>.obs to get sample IDs.
+	        If defined, some analyses can be performed by sample.
+	    arms_file : str or pd.DataFrame
+	        File path or dataframe with gene arms information.
+	        (See swiftcnv.load_chr_arms()).
+	    sex_chr : bool
+	        Keep genes from chromosomes X and Y (excluded by default).
+	    exclude_immune : bool
+	        Exclude genes that start with '(HLA-\|IGH\|IGK\|IGL)'.
+	    plot : bool
+	        Plot heatmap and heatmaps by sample to <output_dir>.
+	    run_hmm : bool
+	        Perform HMM Segmentation analysis from CNV scores.
+	    hmm_by : str ['subcluster', 'sample', 'cell']
+	        Stratify HMM Segmentation by sublusters of CNV scores (in each
+	        sample), by whole samples or by individual cells. Default: 'subcluster'.
+	    n_clusters : int
+	        Number of clusters for HMM by subcluster. Default: 3.
+	    threads : int
+	        Number of threads for multithread processes. Default: single thread.
+
+	Returns:
+	    AnnData
+	        Updated copy of AnnData if an object was provided
+	        CNV scores go to <adata>.obsm['cnv_mat']
+	        Cell info goes to <adata>.obs
+	        Gene info goes to <adata>.var, including 'has_cnv' bool
+	           column indicating presence in CNV scores matrix
+	    tuple[AnnData, np.array, (pd.DataFrame or None)]
+	        - Updated Anndata
+	        - CNV states from HMM Segmentation, indices and columns
+	            match the CNV scores matrix
+	        - Tumor subclusters for each cell if hmm_by='subcluster'
+	    None
+	        If run from h5ad file
+	'''
 
 	n_steps = 4
 	if plot and output_dir is not None:
@@ -521,8 +581,3 @@ def run_from_adata(adata, gtf_file, output_dir=None, cells_file=None, reference_
 			return adata, cnv_states, subclusters_df
 		else:
 			return adata
-	else:
-		if run_hmm:
-			return cnv_matrix, cnv_states, subclusters_df
-		else:
-			return cnv_matrix
