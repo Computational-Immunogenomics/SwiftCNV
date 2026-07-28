@@ -54,3 +54,19 @@ swiftcnv = "swiftcnv.cli:main"
 
 [project.urls]
 Repository = "https://github.com/Computational-Immunogenomics/SwiftCNV"
+
+
+[tool.hatch.envs.docs]
+detached = true
+dependencies = [
+    "sphinx>=4.0",
+    "sphinx-book-theme",
+    "myst-nb",
+    "sphinx-copybutton",
+    "sphinxcontrib-bibtex",
+    "sphinx-autodoc-typehints",
+    "sphinxext-opengraph",
+]
+
+[tool.hatch.envs.docs.scripts]
+build = "sphinx-build -b html docs/ docs/_build/html"
