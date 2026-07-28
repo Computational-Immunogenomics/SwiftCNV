@@ -566,11 +566,8 @@ def run_from_adata(adata, gtf_file, output_dir=None, cells_file=None, reference_
 		obj.plot(output_file=heatmap_filename, threads=threads, Sample=sample_ids, Subcluster=subcl)
 		logger.info(f'    Heatmap saved to {heatmap_filename}')
 		if sample_ids is not None:
-			p1, p99 = np.percentile(cnv_matrix, [1, 99])
-			vmax = max(max(abs(p1), abs(p99)), 0.05)
-			vmin = -vmax
 			pdf_filename = os.path.join(output_dir, 'cnv_scores_by_sample.pdf')
-			obj.plot(output_file=pdf_filename, threads=threads, groups=sample_ids, vmin=vmin, vmax=vmax, Subcluster=subcl)
+			obj.plot(output_file=pdf_filename, threads=threads, groups=sample_ids, Subcluster=subcl)
 			logger.info(f'    PDF by sample saved to {pdf_filename}')
 
 	logger.info('Finished')

@@ -456,19 +456,16 @@ def get_clusters(mat, groups=None, threads=1):
 		return list(range(mat.shape[0])), None
 
 	if groups is None:
-		logger.info(f'    Hierarchical Clustering using single thread for whole matrix')
 		cell_order, Z, _ = _cluster_worker(mat, np.arange(mat.shape[0]))
 		return cell_order, Z
 
 	idx_list = [np.where(groups == group)[0] for group in sorted(np.unique(groups))]
 	threads = min(threads, len(idx_list))
 	if threads > 1:
-		logger.info(f'    Hierarchical Clustering using {threads} threads for {len(idx_list)} groups')
 		results = Parallel(n_jobs=threads, prefer='threads')(
 			delayed(_cluster_worker)(mat, idx) for idx in idx_list
 		)
 	else:
-		logger.info(f'    Hierarchical Clustering using single thread for {len(idx_list)} groups')
 		results = [_cluster_worker(mat, idx) for idx in idx_list]
 
 	orders, Zs, sizes = zip(*results)
@@ -580,7 +577,6 @@ def plot_cnv(mat, ref_cells, regions, output_file=None, figsize=(20, 12),
 	kwargs = {k: np.array(v) for k, v in kwargs.items() if v is not None}
 	groups = kwargs[list(kwargs)[0]] if kwargs else None
 	if cluster_cells:
-		logger.info(f'    Clustering cells stratified by: {list(kwargs)[0] if kwargs else None}')
 		if groups is None:
 			ref_order, ref_Z = get_clusters(ref_mat)
 			obs_order, obs_Z = get_clusters(obs_mat)
@@ -661,7 +657,7 @@ def plot_cnv(mat, ref_cells, regions, output_file=None, figsize=(20, 12),
 	# Vertical grouping bars
 	first = True
 	leg_y = 0.68
-	palettes = cycle(['tab20', 'Set3', 'tab20b', 'Paired', 'tab20c'])
+	palettes = cycle(['tab20', 'Set3', 'Paired', 'Dark2', 'okabe_ito'])
 	for k, (bar_label, vals) in enumerate(kwargs.items()):
 		unique_vals = sorted(pd.unique(vals))
 		palette = plt.colormaps[next(palettes)]
@@ -755,17 +751,30 @@ def plot_cnv_multi(mat, ref_cells, regions, groups, output_file, **kwargs):
 	'''Plot matrix divided by <groups> into multiple plots and output
 	to a PDF file with one page per group.
 	See plot_cnv for documentation of the rest of parameters.
+	Auto-lim of vmin/vmax is computed for all groups globally.
 	'''
 
 	if not output_file.endswith('.pdf'):
 		raise ValueError(f'Output file must be .pdf, but {output_file} was given')
 	unique_groups = sorted(np.unique(groups))
 	args = {'figsize', 'cmap', 'cluster_cells', 'add_dendrogram', 'vmin', 'vmax', 'vcenter', 'header', 'threads'}
+	vcenter = kwargs.pop('vcenter', 0)
+	vmin = kwargs.pop('vmin', None)
+	vmax = kwargs.pop('vmax', None)
+	if vmin is None or vmax is None:
+		p1, p99 = np.percentile(mat[ref_cells, :].ravel() - vcenter, [1, 99])
+		auto_lim = max(max(abs(p1), abs(p99)), 0.05)
+		if vmin is None:
+			vmin = -auto_lim + vcenter
+		if vmax is None:
+			vmax = auto_lim + vcenter
+		logger.info(f'    Plot: auto colour scale [{vmin:.3f}, {vmax:.3f}]')
 	with PdfPages(output_file) as pdf:
 		for group in unique_groups:
 			idx = groups == group
 			g_kwargs = {k: v if (k in args or v is None) else v[idx] for k, v in kwargs.items()}
-			fig = plot_cnv(mat[idx], ref_cells[idx], regions, **g_kwargs)
+			fig = plot_cnv(mat[idx], ref_cells[idx], regions, vcenter=vcenter,
+						   vmin=vmin, vmax=vmax, **g_kwargs)
 			fig.suptitle(str(group), fontsize=16, fontweight='bold', y=0.95)
 			pdf.savefig(fig)
 			plt.close(fig)
