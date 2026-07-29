@@ -207,7 +207,7 @@ def load_chr_arms(arms_path=None):
 		else:
 			arms = pd.read_csv(arms_path, sep='\t', usecols=cols, dtype=dtypes)
 	else:
-		arms_path = files('swiftcnv.resources').joinpath('chr_arms.tsv')
+		arms_path = files('swiftcnv').joinpath('resources', 'chr_arms.tsv')
 		with arms_path.open('r', encoding='utf-8') as f:
 			arms = pd.read_csv(f, sep='\t', usecols=cols, dtype=dtypes)
 	arms.rename(columns={'start': 'start_arm', 'end': 'end_arm'}, inplace=True)
@@ -421,11 +421,11 @@ def get_cancer_type_correlation(mat, arms, groups=None, sample_type=None):
 	'''
 
 	if sample_type == 'primary':
-		hmf_path = files('swiftcnv.resources').joinpath('primary_gains.tsv')
+		hmf_path = files('swiftcnv').joinpath('resources', 'primary_gains.tsv')
 	elif sample_type == 'metastatis':
-		hmf_path = files('swiftcnv.resources').joinpath('metastatic_gains.tsv')
+		hmf_path = files('swiftcnv').joinpath('resources', 'metastatic_gains.tsv')
 	elif sample_type is None:
-		hmf_path = files('swiftcnv.resources').joinpath('all_gains.tsv')
+		hmf_path = files('swiftcnv').joinpath('resources', 'all_gains.tsv')
 	else:
 		raise ValueError(f'sample_type must be None, "primary" or "metastatic", not {sample_type}')
 

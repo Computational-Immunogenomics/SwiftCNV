@@ -82,9 +82,7 @@ typehints_defaults = "braces"
 
 source_suffix = {
     ".rst": "restructuredtext",
-    ".ipynb": "myst-nb",
     ".myst": "myst-nb",
-    ".md": "myst-nb",
 }
 
 intersphinx_mapping = {
