@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import sys
 import os
 import logging
 import argparse
@@ -8,6 +9,13 @@ from .core import run_from_adata
 
 
 logger = logging.getLogger('SwiftCNV')
+
+def handle_exception(exc_type, exc_value, exc_traceback):
+	# Don't log Ctrl+C as an error
+	if issubclass(exc_type, KeyboardInterrupt):
+		sys.__excepthook__(exc_type, exc_value, exc_traceback)
+	else:	
+		logger.error('ERROR!', exc_info=(exc_type, exc_value, exc_traceback))
 
 
 def main():
@@ -60,6 +68,7 @@ def main():
 						level=logging.INFO, filemode='w', datefmt='%Y-%m-%d %H:%M:%S',
 						format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
 	logging.captureWarnings(True)
+	sys.excepthook = handle_exception
 
 	bases_window = args.bases_window if args.bases_window is None else args.bases_window * 1e6
 
