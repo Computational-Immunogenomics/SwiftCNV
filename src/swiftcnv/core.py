@@ -444,10 +444,9 @@ def run_from_adata(adata, gtf_file, output_dir=None, cells_file=None, reference_
 	        Cell info goes to <adata>.obs
 	        Gene info goes to <adata>.var, including 'has_cnv' bool
 	           column indicating presence in CNV scores matrix
-	    tuple[AnnData, np.array, (pd.DataFrame or None)]
+	    tuple[AnnData, pd.DataFrame, (pd.DataFrame or None)]
 	        - Updated Anndata
-	        - CNV states from HMM Segmentation, indices and columns
-	            match the CNV scores matrix
+	        - CNV states from HMM Segmentation
 	        - Tumor subclusters for each cell if hmm_by='subcluster'
 	    None
 	        If run from h5ad file

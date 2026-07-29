@@ -469,19 +469,22 @@ def get_cancer_type_correlation(mat, arms, groups=None, sample_type=None):
 ### Plotting and Clustering
 
 def _cluster_worker(mat, idx):
-	'''Clustering worker for multiprocessing setup.
-	Uses hierarchical clustering of PCA components
-	'''
-	n = len(idx)
-	if n == 1:
-		return [idx[0]], None, n
+    '''Clustering worker for multiprocessing setup.
+    Uses hierarchical clustering of PCA components
+    '''
 
-	X = PCA(n_components=20, random_state=42).fit_transform(mat)
-	dist = pdist(X[idx], metric='correlation')
-	Z = linkage(dist, method='ward')
-	order = [idx[i] for i in leaves_list(Z)]
+    n = len(idx)
+    if n == 1:
+        return [idx[0]], None, n
+    
+    n_components = min(mat.shape[0], 20)
 
-	return order, Z, n
+    X = PCA(n_components=n_components, random_state=42).fit_transform(mat)
+    dist = pdist(X[idx], metric='correlation')
+    Z = linkage(dist, method='ward')
+    order = [idx[i] for i in leaves_list(Z)]
+
+    return order, Z, n
 
 
 def get_clusters(mat, groups=None, threads=1):

@@ -354,4 +354,4 @@ def run_hmm(x, cell_order=None, gene_order=None, output_dir=None, hmm_by='subclu
 						   output_file=states_filename, cluster_cells=cluster_cells, add_dendrogram=False,
 						   header=False, threads=threads, Sample=sample_rows, Subcluster=subclusters_rows)
 
-	return cnv_states, subclusters_df
+	return cnv_states_df, subclusters_df
