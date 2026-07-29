@@ -335,9 +335,10 @@ def run_hmm(x, cell_order=None, gene_order=None, output_dir=None, hmm_by='subclu
 			indices = {i: np.where(subclusters_df['subcluster'] == s)[0] for i, s in enumerate(uniq_subclusters)}
 		cnv_states = filter_states_with_bgm(cnv_states, cnv_matrix, indices, neutral_state=1)
 
+	idx = cell_order['cell_name'].to_numpy() if hmm_by == 'cell' else uniq_subclusters
+	cnv_states_df = pd.DataFrame(cnv_states, index=idx, columns=gene_order['gene'])
+	
 	if output_dir is not None:
-		idx = cell_order['cell_name'].to_numpy() if hmm_by == 'cell' else uniq_subclusters
-		cnv_states_df = pd.DataFrame(cnv_states, index=idx, columns=gene_order['gene'])
 		cnv_states_df.to_csv(os.path.join(output_dir, 'cnv_states.tsv.gz'), sep='\t')
 
 		### Plotting
