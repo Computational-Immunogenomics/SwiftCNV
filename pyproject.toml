@@ -45,8 +45,8 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 swiftcnv = [
-    "data/**/*.tsv",
-    "data/**/*.h5ad",
+    "resources/*.tsv",
+    "datasets/*.h5ad"
 ]
 
 [project.scripts]
