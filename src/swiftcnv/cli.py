@@ -48,9 +48,9 @@ def main():
 	parser.add_argument('--cutoff', action='store', dest='cutoff', type=float, default=0.1,
 						help='Remove genes whose mean normalized expression across reference cells is below cutoff')
 	parser.add_argument('--genes-window', action='store', dest='genes_window', type=int, default=None,
-						help='Window size for smoothing in genes (Default: 1% of genes (min. 51) if <bases-window> is also not defined)')
+						help='Window size for smoothing in genes (Default: 0.01 * n genes (min. 51) if <bases-window> is not defined)')
 	parser.add_argument('--bases-window', action='store', dest='bases_window', type=float, default=None,
-						help='Window size for smoothing in MB (Default: 30MB if <genes-window> is also not defined)')
+						help='Window size for smoothing in MB (Default: 30MB if <genes-window> is not defined)')
 	parser.add_argument('-t', '--threads', action='store', dest='threads', type=int, default=1,
 						help='Number of threads to use in parallel processes (segment cells and clustering by samples)')
 	args = parser.parse_args()
