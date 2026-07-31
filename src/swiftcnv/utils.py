@@ -19,6 +19,7 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 from matplotlib.gridspec import GridSpec
 from matplotlib.patches import Patch
+from matplotlib.cm import ScalarMappable
 from matplotlib.backends.backend_pdf import PdfPages
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 
@@ -320,15 +321,15 @@ def load_output(output_dir, adata=None, **kwargs):
 		return add_mat_to_adata(adata, matrix, cells, genes, **kwargs)
 
 
-def summarise_by_chr_arm(adata, key_obsm='cnv_mat', mode='mean', inplace=False):
+def summarise_by_chr_arm(adata, obsm_key='cnv_mat', mode='mean', inplace=False):
 	'''
 	Summarise the values in the specified obsm key of an adata by chromosome arm.
-	Output goes to obsm layer with key f'{key_obsm}_arms'
+	Output goes to obsm layer with key f'{obsm_key}_arms'
 
 	Parameters:
 	   adata : AnnData
 	        Input AnnData object.
-	   key_obsm : str
+	   obsm_key : str
 	        The key of the obsm layer to summarise (default: 'cnv_mat').
 	   mode : str
 	        The summarise method to use ('mean' or 'median', default: 'mean').
@@ -339,11 +340,11 @@ def summarise_by_chr_arm(adata, key_obsm='cnv_mat', mode='mean', inplace=False):
 	    Updated copy of <adata> or None (if inplace=True)
 	'''
 
-	if key_obsm not in adata.obsm:
-		raise ValueError(f'obsm key "{key_obsm}" not found in AnnData object.')
+	if obsm_key not in adata.obsm:
+		raise ValueError(f'obsm key "{obsm_key}" not found in AnnData object.')
 
 
-	mat = adata.obsm[key_obsm]
+	mat = adata.obsm[obsm_key]
 
 	cnv_genes = adata.var[adata.var['has_cnv']].index.tolist()
 
@@ -364,19 +365,19 @@ def summarise_by_chr_arm(adata, key_obsm='cnv_mat', mode='mean', inplace=False):
 	mean_by_arm_df.columns = [col.replace('_', '') for col in mean_by_arm_df.columns]
 
 	if inplace:
-		adata.obsm[f'{key_obsm}_arms'] = mean_by_arm_df
+		adata.obsm[f'{obsm_key}_arms'] = mean_by_arm_df
 	else:
 		return mean_by_arm_df
 
 
-def cnv_score(adata, key_obsm='cnv_mat_arms', key_added='cnv_score', inplace=False):
+def cnv_score(adata, obsm_key='cnv_mat_arms', key_added='cnv_score', inplace=False):
 	'''Calculate CNV burden ignoring values within a background noise threshold window.
 	'''
 
-	if key_obsm in adata.obsm:
-		X = adata.obsm[key_obsm]
+	if obsm_key in adata.obsm:
+		X = adata.obsm[obsm_key]
 	else:
-		raise ValueError(f'"{key_obsm}" not found in adata.uns nor in adata.obsm. Please ensure the correct key is provided.')
+		raise ValueError(f'"{obsm_key}" not found in adata.uns nor in adata.obsm. Please ensure the correct key is provided.')
 
 	# Calculate Mean Squared Deviation using only the surviving alterations
 	cnv_burden = np.mean(np.square(X), axis=1)
@@ -387,14 +388,14 @@ def cnv_score(adata, key_obsm='cnv_mat_arms', key_added='cnv_score', inplace=Fal
 		return cnv_burden
 
 
-def get_genes_chr_arm(adata, key_obsm='cnv_mat', chr_arms=None):
+def get_genes_chr_arm(adata, obsm_key='cnv_mat', chr_arms=None):
 	'''
 	Get the genes corresponding to a specific chromosome arm from an AnnData object.
 
 	Parameters:
 	    adata : AnnData
 	        Input AnnData object.
-	   key_obsm : str
+	   obsm_key : str
 	        The key of the obsm layer to summarise (default: 'cnv_mat').
 	    chr_arms : str or list
 	        Chromosome arm(s) to filter by.
@@ -413,7 +414,7 @@ def get_genes_chr_arm(adata, key_obsm='cnv_mat', chr_arms=None):
 
 	genes = adata.var.loc[adata.var['has_cnv'] & adata.var['chr_arm'].isin(chr_arms)].index.tolist()
 
-	return adata.obsm[key_obsm].loc[:, adata.obsm[key_obsm].columns.isin(genes)]
+	return adata.obsm[obsm_key].loc[:, adata.obsm[obsm_key].columns.isin(genes)]
 
 
 def get_cancer_type_correlation(mat, arms, groups=None, sample_type=None):
@@ -570,7 +571,7 @@ def merge_clusters(Zs, sizes, root_height=1.2):
 
 
 def plot_cnv(mat, ref_cells, regions, output_file=None, figsize=(20, 12),
-			 cmap='RdBu_r', cluster_cells=True, add_dendrogram=True,
+			 cmap='RdBu_r', cluster_cells=True, add_dendrogram=True, group_cells=True,
 			 vmin=None, vmax=None, vcenter=0, header=True, threads=1, **kwargs):
 	'''Plot the SwiftCNV heatmap with chr/arm annotations with separate
 	reference/observation panels. **kwargs add vertical bars to the left.
@@ -596,6 +597,8 @@ def plot_cnv(mat, ref_cells, regions, output_file=None, figsize=(20, 12),
 	        Use hierarchical clustering to order the cells
 	    add_dendrogram : bool
 	        Add clustering dendrogram to the left
+	    group_cells : bool
+	        Group cells by first kwarg. Default: True
 	    vmin : float
 	        Min value for the colormap. Default: auto around vcencer
 	    vmax : float
@@ -607,10 +610,10 @@ def plot_cnv(mat, ref_cells, regions, output_file=None, figsize=(20, 12),
 	    threads : int
 	        number of threads for clustering
 	    **kwargs : np.arrays
-	        Each array matches the cells and will add a vertical bar
-	        to the left (e.g., sample, cell-type, subcluster...). The
-	        first kwarg stratifies the clustering so the cells will
-	        always separated in these groups.
+	        Each array matches the cells and will add a vertical bar to the
+	        left (e.g., sample, cell-type, subcluster...). If <group_cells>
+	        is True, the first kwarg stratifies the clustering so the cells
+	        will always separated in these groups
 
 	Returns:
 	    None
@@ -629,7 +632,7 @@ def plot_cnv(mat, ref_cells, regions, output_file=None, figsize=(20, 12),
 
 	# Cluster within groups
 	kwargs = {k: np.array(v) for k, v in kwargs.items() if v is not None}
-	groups = kwargs[list(kwargs)[0]] if kwargs else None
+	groups = kwargs[list(kwargs)[0]] if group_cells and kwargs else None
 	if cluster_cells:
 		if groups is None:
 			ref_order, ref_Z = get_clusters(ref_mat)
@@ -700,39 +703,63 @@ def plot_cnv(mat, ref_cells, regions, output_file=None, figsize=(20, 12),
 	ax_obs.set_ylabel('Observation cells', rotation=270, labelpad=10, va='bottom', fontsize=9)
 	ax_obs.yaxis.set_label_position('right')
 
-	# Colorbar
+	# Main colorbar
 	if np.issubdtype(obs_mat.dtype, np.integer):
-		fig.colorbar(im, cax=ax_leg.inset_axes([0, 0.7, 1, 0.3]), ticks=np.arange(vmin, vmax + 1))
+		cbar = fig.colorbar(im, cax=ax_leg.inset_axes([0.5, 0.7, 1, 0.3]), ticks=np.arange(vmin, vmax + 1))
 	else:
-		fig.colorbar(im, cax=ax_leg.inset_axes([0, 0.7, 1, 0.3]))
+		cbar = fig.colorbar(im, cax=ax_leg.inset_axes([0.5, 0.7, 1, 0.3]))
+	cbar.ax.tick_params(labelsize=10)
 	ax_leg.yaxis.set_ticks_position('right')
 	ax_leg.yaxis.set_label_position('right')
 
 	# Vertical grouping bars
 	first = True
 	leg_y = 0.68
-	palettes = cycle(['tab20', 'Set3', 'Paired', 'Dark2', 'okabe_ito'])
+	categ_palettes = cycle(['tab20', 'Set3', 'Paired', 'Dark2', 'okabe_ito'])
+	cont_cmaps = cycle(['Reds', 'Blues'])
 	for k, (bar_label, vals) in enumerate(kwargs.items()):
-		unique_vals = sorted(pd.unique(vals))
-		palette = plt.colormaps[next(palettes)]
-		val_to_color = {v: palette(i % len(palette.colors)) for i, v in enumerate(unique_vals)}
-		j = len(kwargs) - k - 1
+		continuous = np.issubdtype(vals.dtype, np.floating)
+		if continuous:
+			cmap = plt.colormaps[next(cont_cmaps)]
+			norm = mcolors.Normalize(vmin=np.nanmin(vals), vmax=np.nanmax(vals))
+			sm = ScalarMappable(norm=norm, cmap=cmap)
+			sm.set_array([])
+			j = len(kwargs) - k - 1
 
-		ref_vals = vals[ref_idx][ref_order]
-		ref_colors = np.array([val_to_color[v] for v in ref_vals]).reshape(-1, 1, 4)
-		ax_refbars[j].imshow(ref_colors, aspect='auto', interpolation='none')
-		ax_refbars[j].set_xticks([])
-		ax_refbars[j].set_yticks([])
+			ref_vals = vals[ref_idx][ref_order]
+			ref_colors = cmap(norm(ref_vals)).reshape(-1, 1, 4)
+			ax_refbars[j].imshow(ref_colors, aspect='auto', interpolation='none')
+			ax_refbars[j].set_xticks([])
+			ax_refbars[j].set_yticks([])
 
-		obs_vals = vals[obs_idx][obs_order]
-		obs_colors = np.array([val_to_color[v] for v in obs_vals]).reshape(-1, 1, 4)
-		ax_obsbars[j].imshow(obs_colors, aspect='auto', interpolation='none')
-		ax_obsbars[j].set_xticks([])
-		ax_obsbars[j].set_yticks([])
+			obs_vals = vals[obs_idx][obs_order]
+			obs_colors = cmap(norm(obs_vals)).reshape(-1, 1, 4)
+			ax_obsbars[j].imshow(obs_colors, aspect='auto', interpolation='none')
+			ax_obsbars[j].set_xticks([])
+			ax_obsbars[j].set_yticks([])
 
-		handles = [Patch(color=val_to_color[v], label=str(v)) for v in unique_vals]
+		else:
+			unique_vals = sorted(pd.unique(vals))
+			palette = plt.colormaps[next(categ_palettes)]
+			val_to_color = {v: palette(i % len(palette.colors)) for i, v in enumerate(unique_vals)}
+			j = len(kwargs) - k - 1
+
+			ref_vals = vals[ref_idx][ref_order]
+			ref_colors = np.array([val_to_color[v] for v in ref_vals]).reshape(-1, 1, 4)
+			ax_refbars[j].imshow(ref_colors, aspect='auto', interpolation='none')
+			ax_refbars[j].set_xticks([])
+			ax_refbars[j].set_yticks([])
+
+			obs_vals = vals[obs_idx][obs_order]
+			obs_colors = np.array([val_to_color[v] for v in obs_vals]).reshape(-1, 1, 4)
+			ax_obsbars[j].imshow(obs_colors, aspect='auto', interpolation='none')
+			ax_obsbars[j].set_xticks([])
+			ax_obsbars[j].set_yticks([])
+
+			handles = [Patch(color=val_to_color[v], label=str(v)) for v in unique_vals]
+
 		if len(unique_vals) <= 30:
-			if first:
+			if first and group_cells and not continuous:
 				prev_val = obs_vals[0]
 				for i in range(1, len(obs_vals)):
 					if obs_vals[i] != prev_val:
@@ -744,19 +771,25 @@ def plot_cnv(mat, ref_cells, regions, output_file=None, figsize=(20, 12),
 						if ref_vals[i] != prev_val:
 							ax_ref.axhline(i - 0.5, color='black', linewidth=0.8, alpha=0.7, zorder=5)
 							prev_val = ref_vals[i]
-				first = False
 				ax_chr.legend(handles=handles, title=bar_label, loc='upper center',
-							bbox_to_anchor=(0.5, -0.08), ncol=min(len(handles), 10),
-							fontsize=9, title_fontsize=9, frameon=False,  
-							handlelength=1.2, handleheight=1.2, columnspacing=1.2)
+							  bbox_to_anchor=(0.5, -0.08), ncol=min(len(handles), 10),
+							  fontsize=9, title_fontsize=10, frameon=False,  
+							  handlelength=1.2, handleheight=1.2, columnspacing=1.2)
 			elif (leg_y - len(handles) * 0.025 + 0.03) >= 0:
-				leg = ax_leg.legend(handles=handles, title=bar_label, loc='upper left',
-									bbox_to_anchor=(0.0, leg_y), bbox_transform=ax_leg.transAxes,
-									fontsize=9, title_fontsize=10, frameon=False,
-									ncol=1, handlelength=1.2, handleheight=1.2)
-				leg.set_clip_on(False)
-				ax_leg.add_artist(leg)
-				leg_y -= (len(handles) + 1) * 0.025
+				if continuous:
+					cbar = plt.colorbar(sm, cax=ax_leg.inset_axes([0.5, leg_y - 0.23, 1, 0.2]))
+					cbar.ax.set_title(bar_label, fontsize=10, loc='left')
+					cbar.ax.tick_params(labelsize=10)
+					leg_y -= 0.25
+				else:
+					leg = ax_leg.legend(handles=handles, title=bar_label, loc='upper left',
+										bbox_to_anchor=(0.0, leg_y), bbox_transform=ax_leg.transAxes,
+										alignment='left', fontsize=9, title_fontsize=10, frameon=False,
+										ncol=1, handlelength=1.2, handleheight=1.2)
+					leg.set_clip_on(False)
+					ax_leg.add_artist(leg)
+					leg_y -= (len(handles) + 1) * 0.3 / figsize[1]
+			first = False
 
 	# Dendrogram
 	if cluster_cells and add_dend:
@@ -816,7 +849,7 @@ def plot_cnv_multi(mat, ref_cells, regions, groups, output_file, **kwargs):
 	vmin = kwargs.pop('vmin', None)
 	vmax = kwargs.pop('vmax', None)
 	if vmin is None or vmax is None:
-		p1, p99 = np.percentile(mat[ref_cells, :].ravel() - vcenter, [1, 99])
+		p1, p99 = np.percentile(mat[~ref_cells, :].ravel() - vcenter, [1, 99])
 		auto_lim = max(max(abs(p1), abs(p99)), 0.05)
 		if vmin is None:
 			vmin = -auto_lim + vcenter
@@ -877,13 +910,13 @@ def plot_cnv_summary(adata, groupby, split_by=None, use_rep: str = 'cnv_mat_arms
 	# Dynamic Layout Calculations
 	n_features = plot_data[0][1].shape[1]
 	fig_width = max(15, 0.3 * n_features) 
-	fig_height = (0.3 * total_groups) + (1.5 * n_splits) + 0.4 
+	fig_height = (0.3 * total_groups) + (1.5 * n_splits) + 0.4
 
 	# Create (n_splits + 1) rows
-	height_ratios = [mat.shape[0] for _, mat in plot_data] + [0.3] 
+	height_ratios = [mat.shape[0] for _, mat in plot_data] + [0.3]
 
 	fig, axes = plt.subplots(
-		nrows=n_splits + 1, 
+		nrows=n_splits + 1,
 		ncols=1, 
 		figsize=(fig_width, fig_height), 
 		gridspec_kw={'height_ratios': height_ratios}
@@ -954,41 +987,35 @@ def plot_cnv_summary(adata, groupby, split_by=None, use_rep: str = 'cnv_mat_arms
 	plt.close(fig)
 
 
-def plot_cnv_from_adata(adata, cnv_key="cnv_mat", group_keys=None, group=None, **kwargs):
+def plot_cnv_from_adata(adata, obsm_key='cnv_mat', var_key='chr_arm', **kwargs):
+	'''Call plot_cnv() from adata object.
 
-    adata_plot = adata.copy()
+	Parameters
+	    adata : AnnData
+	        Input AnnData object with all values to plot.
+	    obsm_key : str
+	        Key of <adata>.obsm with matrix to plot. Default: 'cnv_mat'.
+	    var_key : str or None
+	        Key of <adata>.var to group genes if columns are genes. Default: 'chr_arm'.
+	        Set to None for preserving the columns of the original matrix.
+	    **kwargs :
+	        They can be columns of <adata>.obs to add as vertical bars on the left.
+			Else, will be passed to plot_cnv() base function.
+	'''
 
-    if isinstance(group, str) and group_keys is not None:
-        adata_plot = adata[adata.obs[group_keys[0]] == group] # Only the first group key is considered for groups (normally sample)
+	mat = adata.obsm[obsm_key].values
+	ref_cells = adata.obs['reference'].values
+	if var_key is None or not adata.obsm[obsm_key].columns.isin(adata.var.index).all():
+		regions = adata.obsm[obsm_key].columns.values
+	else:
+		regions = adata.var.loc[adata.obsm[obsm_key].columns, var_key].values
 
-    mat = adata_plot.obsm[cnv_key].values
+	if len(regions) != mat.shape[1]:
+		raise ValueError(f'Region length ({len(regions)}) does not match matrix columns ({mat.shape[1]}).')
 
-    ref_cells = adata_plot.obs['reference'].values
+	# Convert any other string arguments matching adata.obs columns into arrays
+	for k, v in kwargs.items():
+		if isinstance(v, str) and v in adata.obs.columns:
+			kwargs[k] = adata.obs[v].values
 
-    if "_arms" in cnv_key:
-        regions = adata_plot.obsm[cnv_key].columns.values
-    else:
-        regions = adata_plot.var.loc[adata_plot.obsm[cnv_key].columns, 'chr_arm']
-
-    if len(regions) != mat.shape[1]:
-        raise ValueError(f"Region length ({len(regions)}) does not match matrix columns ({mat.shape[1]}).")
-
-    plot_kwargs = {}
-    
-    # Handle explicit group_key parameter
-    if group_keys is not None:
-        if isinstance(group_keys, str) and group_keys in adata_plot.obs:
-            plot_kwargs[group_keys] = adata_plot.obs[group_keys].values
-        elif isinstance(group_keys, (list, tuple)):
-            for gk in group_keys:
-                if gk in adata_plot.obs:
-                    plot_kwargs[gk] = adata_plot.obs[gk].values
-
-    # Convert any other string arguments matching adata_plot.obs columns into arrays
-    for k, v in kwargs.items():
-        if isinstance(v, str) and v in adata_plot.obs:
-            plot_kwargs[k] = adata_plot.obs[v].values
-        else:
-            plot_kwargs[k] = v
-
-    plot_cnv(mat, ref_cells, regions, **plot_kwargs)
+	plot_cnv(mat, ref_cells, regions, **kwargs)
