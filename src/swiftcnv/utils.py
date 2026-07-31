@@ -683,9 +683,11 @@ def plot_cnv(mat, ref_cells, regions, output_file=None, figsize=(20, 12),
 	ax_obsbars = [fig.add_subplot(gs[1, j]) for j in range(add_dend, mat_j)]
 	ax_spacer  = fig.add_subplot(gs[1, mat_j + 1])
 	ax_leg     = fig.add_subplot(gs[:, mat_j + 2])
+	ax_legbars = [fig.add_subplot(gs[2, j]) for j in range(add_dend, mat_j)]
 	ax_chr     = fig.add_subplot(gs[2, mat_j])
 	ax_spacer.axis('off')
 	ax_leg.axis('off')
+	[ax.axis('off') for ax in ax_legbars]
 
 	norm = mcolors.TwoSlopeNorm(vmin=vmin, vcenter=vcenter, vmax=vmax)
 
@@ -705,9 +707,9 @@ def plot_cnv(mat, ref_cells, regions, output_file=None, figsize=(20, 12),
 
 	# Main colorbar
 	if np.issubdtype(obs_mat.dtype, np.integer):
-		cbar = fig.colorbar(im, cax=ax_leg.inset_axes([0.5, 0.7, 1, 0.3]), ticks=np.arange(vmin, vmax + 1))
+		cbar = fig.colorbar(im, cax=ax_leg.inset_axes([0.6, 0.7, 1, 0.3]), ticks=np.arange(vmin, vmax + 1))
 	else:
-		cbar = fig.colorbar(im, cax=ax_leg.inset_axes([0.5, 0.7, 1, 0.3]))
+		cbar = fig.colorbar(im, cax=ax_leg.inset_axes([0.6, 0.7, 1, 0.3]))
 	cbar.ax.tick_params(labelsize=10)
 	ax_leg.yaxis.set_ticks_position('right')
 	ax_leg.yaxis.set_label_position('right')
@@ -758,7 +760,10 @@ def plot_cnv(mat, ref_cells, regions, output_file=None, figsize=(20, 12),
 
 			handles = [Patch(color=val_to_color[v], label=str(v)) for v in unique_vals]
 
-		if len(unique_vals) <= 30:
+		ax_legbars[j].text(0.5, 1.0, bar_label, transform=ax_legbars[j].transAxes, rotation=90,
+						   va='top', ha='center', fontsize=10, clip_on=False)
+
+		if continuous or len(unique_vals) <= 30:
 			if first and group_cells and not continuous:
 				prev_val = obs_vals[0]
 				for i in range(1, len(obs_vals)):
@@ -775,9 +780,9 @@ def plot_cnv(mat, ref_cells, regions, output_file=None, figsize=(20, 12),
 							  bbox_to_anchor=(0.5, -0.08), ncol=min(len(handles), 10),
 							  fontsize=9, title_fontsize=10, frameon=False,  
 							  handlelength=1.2, handleheight=1.2, columnspacing=1.2)
-			elif (leg_y - len(handles) * 0.025 + 0.03) >= 0:
+			elif (leg_y - len(handles) * 0.3 / figsize[1]) >= 0:
 				if continuous:
-					cbar = plt.colorbar(sm, cax=ax_leg.inset_axes([0.5, leg_y - 0.23, 1, 0.2]))
+					cbar = plt.colorbar(sm, cax=ax_leg.inset_axes([0.6, leg_y - 0.23, 1, 0.2]))
 					cbar.ax.set_title(bar_label, fontsize=10, loc='left')
 					cbar.ax.tick_params(labelsize=10)
 					leg_y -= 0.25
