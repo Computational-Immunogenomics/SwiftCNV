@@ -9,7 +9,6 @@ from importlib.resources import files
 import numpy as np
 import pandas as pd
 import anndata as ad
-import seaborn as sns
 from scipy.cluster.hierarchy import linkage, dendrogram, leaves_list
 from scipy.spatial.distance import pdist
 from scipy.stats import spearmanr
@@ -321,57 +320,84 @@ def load_output(output_dir, adata=None, **kwargs):
 		return add_mat_to_adata(adata, matrix, cells, genes, **kwargs)
 
 
-def summarise_by_chr_arm(adata, obsm_key='cnv_mat', mode='mean', inplace=False):
-	'''
-	Summarise the values in the specified obsm key of an adata by chromosome arm.
-	Output goes to obsm layer with key f'{obsm_key}_arms'
+def summarise_by_obs(adata, obsm_key='cnv_mat', by='sample', mode='mean'):
+	'''Summarise the values in the specified obsm matrix by cell
+	attributes (sample by default)'.
 
 	Parameters:
 	   adata : AnnData
 	        Input AnnData object.
 	   obsm_key : str
-	        The key of the obsm layer to summarise (default: 'cnv_mat').
+	        Key of the obsm layer to summarise. Default: 'cnv_mat'.
+	   by : str
+	        Key of the obs layer to group columns by. Default: 'sample'.
 	   mode : str
-	        The summarise method to use ('mean' or 'median', default: 'mean').
-	   inplace : bool
-	        Edit <adata> instead of returning a copy.
+	        Summarise method to use ('mean' or 'median', default: 'mean').
 
 	Returns:
-	    Updated copy of <adata> or None (if inplace=True)
+	    pd.DataFrame
+	        Summarised matrix
 	'''
 
 	if obsm_key not in adata.obsm:
 		raise ValueError(f'obsm key "{obsm_key}" not found in AnnData object.')
 
-
-	mat = adata.obsm[obsm_key]
-
-	cnv_genes = adata.var[adata.var['has_cnv']].index.tolist()
-
-	if not isinstance(mat, pd.DataFrame):
-		cnv_df = pd.DataFrame(mat, index=adata.obs_names, columns=cnv_genes)
-	else:
-		cnv_df = mat.copy()
-
+	mat = adata.obsm[obsm_key].groupby(adata.obs[by], sort=False)
 	if mode == 'mean':
-		mean_by_arm_df = cnv_df.T.groupby(adata.var['chr_arm'], sort=False).mean().T
+		summarised_mat = mat.mean()
 	elif mode == 'median':
-		mean_by_arm_df = cnv_df.T.groupby(adata.var['chr_arm'], sort=False).median().T
+		summarised_mat = mat.median()
 	else:
 		raise ValueError(f'Unrecognized mode "{mode}", available are ["mean", "median"]')
 
-	# Filter out centromeres
-	mean_by_arm_df = mean_by_arm_df.loc[:, ~mean_by_arm_df.columns.str.contains('centromere')]
-	mean_by_arm_df.columns = [col.replace('_', '') for col in mean_by_arm_df.columns]
+	return summarised_mat
+
+
+def summarise_by_var(adata, obsm_key='cnv_mat', by='chr_arm',
+					 key_added='cnv_mat_arm', mode='mean', inplace=False):
+	'''Summarise the values of the specified obsm matrix by gene attributes
+	(arm by default). Output goes to obsm layer with key <key_added>.
+
+	Parameters:
+	   adata : AnnData
+	        Input AnnData object.
+	   obsm_key : str
+	        Key of the obsm layer to summarise. Default: 'cnv_mat'.
+	   by : str
+	        Key of the var layer to group columns by. Default: 'chr_arm'.
+	   key_added : str
+	        Key of the obsm layer to add the result. Default: 'cnv_mat_arm'.
+	   mode : str
+	        Summarise method to use ('mean' or 'median', default: 'mean').
+	   inplace : bool
+	        Edit <adata> instead of returning a copy.
+
+	Returns:
+	    pd.DataFrame
+	        Summarised matrix (if inplace=False)
+	'''
+
+	if obsm_key not in adata.obsm:
+		raise ValueError(f'obsm key "{obsm_key}" not found in AnnData object.')
+
+	mat_T = adata.obsm[obsm_key].T.groupby(adata.var.loc[adata.obsm[obsm_key].columns, by], sort=False)
+	if mode == 'mean':
+		summarised_mat = mat_T.mean().T
+	elif mode == 'median':
+		summarised_mat = mat_T.median().T
+	else:
+		raise ValueError(f'Unrecognized mode "{mode}", available are ["mean", "median"]')
+
+	summarised_mat.columns = [col.replace('_', '') for col in summarised_mat.columns]
 
 	if inplace:
-		adata.obsm[f'{obsm_key}_arms'] = mean_by_arm_df
+		adata.obsm[key_added] = summarised_mat
 	else:
-		return mean_by_arm_df
+		return summarised_mat
 
 
 def cnv_score(adata, obsm_key='cnv_mat_arms', key_added='cnv_score', inplace=False):
-	'''Calculate CNV burden ignoring values within a background noise threshold window.
+	'''Calculate CNV burden as the mean of the CNV scores squared.
 	'''
 
 	if obsm_key in adata.obsm:
@@ -577,8 +603,8 @@ def plot_cnv(mat, ref_cells, regions, output_file=None, figsize=(20, 12),
 	reference/observation panels. **kwargs add vertical bars to the left.
 	First kwarg determines stratification of clustering and its legend
 	appears at the bottom.
-	vmin and vmax, if not defined, are set to the 99th percentile of the data
-	around vcenter
+	vmin and vmax, if not defined, are set to the 1st/99th percentile of
+	the observation values around vcenter
 
 	Parameters:
 	    mat : np.array
@@ -600,9 +626,9 @@ def plot_cnv(mat, ref_cells, regions, output_file=None, figsize=(20, 12),
 	    group_cells : bool
 	        Group cells by first kwarg. Default: True
 	    vmin : float
-	        Min value for the colormap. Default: auto around vcencer
+	        Min value for the colormap. Default: auto around vcenter
 	    vmax : float
-	        Max value for the colormap. Default: auto around vcencer
+	        Max value for the colormap. Default: auto around vcenter
 	    vcenter : float
 	        Value on the center of the colormap. Default: 0
 	    header : bool
@@ -625,23 +651,31 @@ def plot_cnv(mat, ref_cells, regions, output_file=None, figsize=(20, 12),
 	# Separate ref and obs
 	ref_idx = np.where(ref_cells)[0]
 	obs_idx = np.where(~ref_cells)[0]
-	ref_mat = mat[ref_idx, :]
-	obs_mat = mat[obs_idx, :]
-	n_ref = len(ref_mat)
-	n_obs = len(obs_mat)
+	n_ref = len(ref_idx)
+	n_obs = len(obs_idx)
+	if not n_ref and not n_obs:
+		raise ValueError('Couldn\'t detect any ref or obs cells')
+	if n_ref:
+		ref_mat = mat[ref_idx, :]
+	if n_obs:
+		obs_mat = mat[obs_idx, :]
 
 	# Cluster within groups
 	kwargs = {k: np.array(v) for k, v in kwargs.items() if v is not None}
 	groups = kwargs[list(kwargs)[0]] if group_cells and kwargs else None
 	if cluster_cells:
-		if groups is None:
-			ref_order, ref_Z = get_clusters(ref_mat)
-			obs_order, obs_Z = get_clusters(obs_mat)
-		else:
-			ref_order, ref_Z = get_clusters(ref_mat, groups=groups[ref_idx], threads=threads)
-			obs_order, obs_Z = get_clusters(obs_mat, groups=groups[obs_idx], threads=threads)
-		ref_mat = ref_mat[ref_order, :]
-		obs_mat = obs_mat[obs_order, :]
+		if n_ref:
+			if groups is None:
+				ref_order, ref_Z = get_clusters(ref_mat)
+			else:
+				ref_order, ref_Z = get_clusters(ref_mat, groups=groups[ref_idx], threads=threads)
+			ref_mat = ref_mat[ref_order, :]
+		if n_obs:
+			if groups is None:
+				obs_order, obs_Z = get_clusters(obs_mat)
+			else:
+				obs_order, obs_Z = get_clusters(obs_mat, groups=groups[obs_idx], threads=threads)
+			obs_mat = obs_mat[obs_order, :]
 	else:
 		ref_Z = None
 		obs_Z = None
@@ -650,7 +684,10 @@ def plot_cnv(mat, ref_cells, regions, output_file=None, figsize=(20, 12),
 
 	# Sample-specific colour scale (symmetric around 0 by default)
 	if vmin is None or vmax is None:
-		p1, p99 = np.percentile(obs_mat.ravel() - vcenter, [1, 99])
+		if n_obs:
+			p1, p99 = np.percentile(obs_mat.ravel() - vcenter, [1, 99])
+		elif n_ref:
+			p1, p99 = np.percentile(ref_mat.ravel() - vcenter, [1, 99])
 		auto_lim = max(max(abs(p1), abs(p99)), 0.05)
 		if vmin is None:
 			vmin = -auto_lim + vcenter
@@ -658,18 +695,13 @@ def plot_cnv(mat, ref_cells, regions, output_file=None, figsize=(20, 12),
 			vmax = auto_lim + vcenter
 		logger.info(f'    Plot: auto colour scale [{vmin:.3f}, {vmax:.3f}]')
 
-	# Chromosome metadata
-	unique_regions = sorted(np.unique(regions), key=chr_sort_key)
-	region_to_int = {c: i for i, c in enumerate(unique_regions)}
-	region_ints = np.array([region_to_int[c] for c in regions])
-	chr_cmap = mcolors.ListedColormap(list(islice(cycle(['#f0f0f0', '#e0e0f0']), len(unique_regions))))
-
 	# Grid Layout
 	fig = plt.figure(figsize=figsize)
 	add_dend = int(add_dendrogram)
 	widths = [8] * add_dend + [1] * len(kwargs) + [80, 1, 1]
-	gs = GridSpec(3, len(widths), hspace=0.02, wspace=0.02, width_ratios=widths,
-				height_ratios=[n_ref, n_obs, 0.03 * (n_ref + n_obs)])
+	heights = [n_ref, n_obs, max(0.03 * (n_ref + n_obs), 0.3 / figsize[1] * (n_ref + n_obs))]
+	gs = GridSpec(3, len(widths), hspace=0.02, wspace=0.02,
+				  width_ratios=widths, height_ratios=heights)
 
 	if add_dend:
 		ax_refdend = fig.add_subplot(gs[0, 0])
@@ -692,18 +724,24 @@ def plot_cnv(mat, ref_cells, regions, output_file=None, figsize=(20, 12),
 	norm = mcolors.TwoSlopeNorm(vmin=vmin, vcenter=vcenter, vmax=vmax)
 
 	# Reference heatmap
-	ax_ref.imshow(ref_mat, aspect='auto', cmap=cmap, norm=norm, interpolation='none')
-	ax_ref.set_xticks([])
-	ax_ref.set_yticks([])
-	ax_ref.set_ylabel('Reference cells', rotation=270, labelpad=10, va='bottom', fontsize=9)
-	ax_ref.yaxis.set_label_position('right')
+	if n_ref:
+		ax_ref.imshow(ref_mat, aspect='auto', cmap=cmap, norm=norm, interpolation='none')
+		ax_ref.set_xticks([])
+		ax_ref.set_yticks([])
+		ax_ref.set_ylabel('Reference cells', rotation=270, labelpad=10, va='bottom', fontsize=9)
+		ax_ref.yaxis.set_label_position('right')
+	else:
+		ax_ref.axis('off')
 
 	# Observation heatmap
-	im = ax_obs.imshow(obs_mat, aspect='auto', cmap=cmap, norm=norm, interpolation='none')
-	ax_obs.set_xticks([])
-	ax_obs.set_yticks([])
-	ax_obs.set_ylabel('Observation cells', rotation=270, labelpad=10, va='bottom', fontsize=9)
-	ax_obs.yaxis.set_label_position('right')
+	if n_obs:
+		im = ax_obs.imshow(obs_mat, aspect='auto', cmap=cmap, norm=norm, interpolation='none')
+		ax_obs.set_xticks([])
+		ax_obs.set_yticks([])
+		ax_obs.set_ylabel('Observation cells', rotation=270, labelpad=10, va='bottom', fontsize=9)
+		ax_obs.yaxis.set_label_position('right')
+	else:
+		ax_obs.axis('off')
 
 	# Main colorbar
 	if np.issubdtype(obs_mat.dtype, np.integer):
@@ -728,17 +766,19 @@ def plot_cnv(mat, ref_cells, regions, output_file=None, figsize=(20, 12),
 			sm.set_array([])
 			j = len(kwargs) - k - 1
 
-			ref_vals = vals[ref_idx][ref_order]
-			ref_colors = cmap(norm(ref_vals)).reshape(-1, 1, 4)
-			ax_refbars[j].imshow(ref_colors, aspect='auto', interpolation='none')
-			ax_refbars[j].set_xticks([])
-			ax_refbars[j].set_yticks([])
+			if n_ref:
+				ref_vals = vals[ref_idx][ref_order]
+				ref_colors = cmap(norm(ref_vals)).reshape(-1, 1, 4)
+				ax_refbars[j].imshow(ref_colors, aspect='auto', interpolation='none')
+				ax_refbars[j].set_xticks([])
+				ax_refbars[j].set_yticks([])
 
-			obs_vals = vals[obs_idx][obs_order]
-			obs_colors = cmap(norm(obs_vals)).reshape(-1, 1, 4)
-			ax_obsbars[j].imshow(obs_colors, aspect='auto', interpolation='none')
-			ax_obsbars[j].set_xticks([])
-			ax_obsbars[j].set_yticks([])
+			if n_obs:
+				obs_vals = vals[obs_idx][obs_order]
+				obs_colors = cmap(norm(obs_vals)).reshape(-1, 1, 4)
+				ax_obsbars[j].imshow(obs_colors, aspect='auto', interpolation='none')
+				ax_obsbars[j].set_xticks([])
+				ax_obsbars[j].set_yticks([])
 
 		else:
 			unique_vals = sorted(pd.unique(vals))
@@ -746,17 +786,23 @@ def plot_cnv(mat, ref_cells, regions, output_file=None, figsize=(20, 12),
 			val_to_color = {v: palette(i % len(palette.colors)) for i, v in enumerate(unique_vals)}
 			j = len(kwargs) - k - 1
 
-			ref_vals = vals[ref_idx][ref_order]
-			ref_colors = np.array([val_to_color[v] for v in ref_vals]).reshape(-1, 1, 4)
-			ax_refbars[j].imshow(ref_colors, aspect='auto', interpolation='none')
-			ax_refbars[j].set_xticks([])
-			ax_refbars[j].set_yticks([])
+			if n_ref:
+				ref_vals = vals[ref_idx][ref_order]
+				ref_colors = np.array([val_to_color[v] for v in ref_vals]).reshape(-1, 1, 4)
+				ax_refbars[j].imshow(ref_colors, aspect='auto', interpolation='none')
+				ax_refbars[j].set_xticks([])
+				ax_refbars[j].set_yticks([])
+			else:
+				ax_refbars[j].axis('off')
 
-			obs_vals = vals[obs_idx][obs_order]
-			obs_colors = np.array([val_to_color[v] for v in obs_vals]).reshape(-1, 1, 4)
-			ax_obsbars[j].imshow(obs_colors, aspect='auto', interpolation='none')
-			ax_obsbars[j].set_xticks([])
-			ax_obsbars[j].set_yticks([])
+			if n_obs:
+				obs_vals = vals[obs_idx][obs_order]
+				obs_colors = np.array([val_to_color[v] for v in obs_vals]).reshape(-1, 1, 4)
+				ax_obsbars[j].imshow(obs_colors, aspect='auto', interpolation='none')
+				ax_obsbars[j].set_xticks([])
+				ax_obsbars[j].set_yticks([])
+			else:
+				ax_obsbars[j].axis('off')
 
 			handles = [Patch(color=val_to_color[v], label=str(v)) for v in unique_vals]
 
@@ -765,17 +811,18 @@ def plot_cnv(mat, ref_cells, regions, output_file=None, figsize=(20, 12),
 
 		if continuous or len(unique_vals) <= 30:
 			if first and group_cells and not continuous:
-				prev_val = obs_vals[0]
-				for i in range(1, len(obs_vals)):
-					if obs_vals[i] != prev_val:
-						ax_obs.axhline(i - 0.5, color='black', linewidth=0.8, alpha=0.7, zorder=5)
-						prev_val = obs_vals[i]
-				if len(ref_order) >= 1:
+				if n_ref > 1:
 					prev_val = ref_vals[0]
 					for i in range(1, len(ref_vals)):
 						if ref_vals[i] != prev_val:
 							ax_ref.axhline(i - 0.5, color='black', linewidth=0.8, alpha=0.7, zorder=5)
 							prev_val = ref_vals[i]
+				if n_obs > 1:
+					prev_val = obs_vals[0]
+					for i in range(1, len(obs_vals)):
+						if obs_vals[i] != prev_val:
+							ax_obs.axhline(i - 0.5, color='black', linewidth=0.8, alpha=0.7, zorder=5)
+							prev_val = obs_vals[i]
 				ax_chr.legend(handles=handles, title=bar_label, loc='upper center',
 							  bbox_to_anchor=(0.5, -0.08), ncol=min(len(handles), 10),
 							  fontsize=9, title_fontsize=10, frameon=False,  
@@ -799,16 +846,21 @@ def plot_cnv(mat, ref_cells, regions, output_file=None, figsize=(20, 12),
 	# Dendrogram
 	if cluster_cells and add_dend:
 		with plt.rc_context({'lines.linewidth': 0.5}):
-			if len(ref_order) > 1:
+			if n_ref > 1:
 				dendrogram(ref_Z, orientation='left', ax=ax_refdend, no_labels=True, color_threshold=0,
 						above_threshold_color='black', link_color_func=lambda _: 'black')
-			if len(obs_order) > 1:
+				ax_refdend.invert_yaxis()
+			if n_obs > 1:
 				dendrogram(obs_Z, orientation='left', ax=ax_obsdend, no_labels=True, color_threshold=0,
 						above_threshold_color='black', link_color_func=lambda _: 'black')
-		ax_refdend.invert_yaxis()
-		ax_obsdend.invert_yaxis()
+				ax_obsdend.invert_yaxis()
 
 	# Chromosome/arm bar
+	unique_regions = sorted(np.unique(regions), key=chr_sort_key)
+	region_to_int = {c: i for i, c in enumerate(unique_regions)}
+	region_ints = np.array([region_to_int[c] for c in regions])
+	chr_cmap = mcolors.ListedColormap(list(islice(cycle(['#f0f0f0', '#e0e0f0']), len(unique_regions))))
+
 	ax_chr.imshow(region_ints.reshape(1, -1), aspect='auto', cmap=chr_cmap, interpolation='none')
 	ax_chr.set_xticks([])
 	ax_chr.set_yticks([])
@@ -822,9 +874,10 @@ def plot_cnv(mat, ref_cells, regions, output_file=None, figsize=(20, 12),
 	prev_chr = regions[0]
 	for i in range(1, len(regions)):
 		if regions[i] != prev_chr:
-			ax_obs.axvline(i - 0.5, color='black', linewidth=1, alpha=0.8, zorder=5)
-			if len(ref_idx) >= 1:
+			if n_ref:
 				ax_ref.axvline(i - 0.5, color='black', linewidth=1, alpha=0.8, zorder=5)
+			if n_obs:
+				ax_obs.axvline(i - 0.5, color='black', linewidth=1, alpha=0.8, zorder=5)
 			prev_chr = regions[i]
 
 	if header:
@@ -840,10 +893,9 @@ def plot_cnv(mat, ref_cells, regions, output_file=None, figsize=(20, 12),
 
 
 def plot_cnv_multi(mat, ref_cells, regions, groups, output_file, **kwargs):
-	'''Plot matrix divided by <groups> into multiple plots and output
-	to a PDF file with one page per group.
-	See plot_cnv for documentation of the rest of parameters.
-	Auto-lim of vmin/vmax is computed for all groups globally.
+	'''Plot matrix divided by <groups> into multiple plots and output to
+	a PDF file with one page per group. **kwargs are passed to plot_cnv().
+	Auto-lim of vmin/vmax is computed for obs cells from all groups globally.
 	'''
 
 	if not output_file.endswith('.pdf'):
@@ -872,128 +924,40 @@ def plot_cnv_multi(mat, ref_cells, regions, groups, output_file, **kwargs):
 			plt.close(fig)
 
 
-def plot_cnv_summary(adata, groupby, split_by=None, use_rep: str = 'cnv_mat_arms', outdir=None):
+def plot_cnv_summary(adata, by, obsm_key='cnv_mat_arms', mode='mean',
+					 output_file=None, **kwargs):
+	'''Plot a matrix with cells (rows) summarised by <by> groups
+	using mean or median (<mode>). **kwargs are passed to plot_cnv().
+	'''
 
-	if isinstance(adata.obsm[use_rep], pd.DataFrame):
-		mat_df = adata.obsm[use_rep]
+	mat = summarise_by_obs(adata, obsm_key=obsm_key, by=by, mode=mode)
+	if adata.obsm[obsm_key].columns.isin(adata.var.index).all():
+		regions = adata.var.loc[adata.obsm[obsm_key].columns, 'chr_arm'].values
 	else:
-		mat_df = pd.DataFrame(adata.obsm[use_rep], index=adata.obs_names)
-	mat_df.columns = mat_df.columns.str.replace('chr', '')
+		regions = adata.obsm[obsm_key].columns.values
 
-	if split_by is not None:
-		splits = adata.obs[split_by].dropna().unique()[:3]
-	else:
-		splits = [None]
-	n_splits = len(splits)
+	dummy_ref = np.full(mat.shape[0], False, dtype=bool)
+	fig = plot_cnv(mat.values, ref_cells=dummy_ref, cluster_cells=False, header=False,
+				   regions=regions, **{by.capitalize(): mat.index.values}, **kwargs)
 
-	plot_data = []
-	total_groups = 0
-	global_max = 0
-	for split in splits:
-		if split is not None:
-			mask = adata.obs[split_by] == split
-			sub_obs = adata.obs[mask]
-			sub_mat = mat_df.loc[mask]
-		else:
-			sub_obs = adata.obs
-			sub_mat = mat_df
+	ncols = fig.axes[0].get_subplotspec().get_gridspec().ncols
+	for ax in fig.axes:
+		ss = ax.get_subplotspec()
+		if ss.colspan.start == ncols - 3:
+			if ss.rowspan.start == 0:
+				ax.set_ylabel('')
+			elif ss.rowspan.start == 1:
+				ax.set_ylabel('')
 
-		summarised_mat = sub_mat.groupby(sub_obs[groupby], sort=False, observed=True).mean()
-
-		# Update the global absolute maximum
-		current_max = np.abs(summarised_mat.to_numpy()).max()
-		if current_max > global_max:
-			global_max = current_max
-
-		plot_data.append((split, summarised_mat))
-		total_groups += summarised_mat.shape[0]
-
-	# Set explicit symmetric limits
-	vmin = -global_max
-	vmax = global_max
-
-	# Dynamic Layout Calculations
-	n_features = plot_data[0][1].shape[1]
-	fig_width = max(15, 0.3 * n_features) 
-	fig_height = (0.3 * total_groups) + (1.5 * n_splits) + 0.4
-
-	# Create (n_splits + 1) rows
-	height_ratios = [mat.shape[0] for _, mat in plot_data] + [0.3]
-
-	fig, axes = plt.subplots(
-		nrows=n_splits + 1,
-		ncols=1, 
-		figsize=(fig_width, fig_height), 
-		gridspec_kw={'height_ratios': height_ratios}
-	)
-
-	if n_splits == 1:
-		heatmap_axes = [axes[0]]
-		cbar_container_ax = axes[1]
-	else:
-		heatmap_axes = axes[:-1]
-		cbar_container_ax = axes[-1]
-
-	# Plot each heatmap using the pre-calculated symmetrical vmin/vmax limits
-	for i, (ax, (split_name, summarised_mat)) in enumerate(zip(heatmap_axes, plot_data)):
-		sns.heatmap(
-			summarised_mat,
-			cmap='RdBu_r',
-			vmin=vmin,
-			vmax=vmax,
-			center=0,
-			annot=False,
-			linewidths=0.4,  
-			linecolor='black',   
-			cbar=False, 
-			ax=ax 
-		)
-
-		ax.grid(False)
-
-		for _, spine in ax.spines.items():
-			spine.set_visible(True)
-			spine.set_color('black')
-			spine.set_linewidth(1)
-
-		# Axis label styling
-		ax.tick_params(axis='y', labelsize=12)
-		ax.set_ylabel('')
-
-		ax.tick_params(axis='x', which='both', bottom=True, labelbottom=True, labelsize=12, rotation=90)
-
-		if split_name is not None:
-			ax.set_title(f'{split_name}', fontsize=14, pad=10)
-
-	cbar_container_ax.axis('off') 
-
-	fixed_cbar_ax = inset_axes(
-		cbar_container_ax,
-		width=5.0,  
-		height=0.2, 
-		loc='upper center'
-	)
-
-	# Add the shared horizontal colorbar into our locked axis dimensions
-	mappable = heatmap_axes[0].collections[0]
-	cbar = fig.colorbar(mappable, cax=fixed_cbar_ax, orientation='horizontal')
-	cbar.ax.tick_params(labelsize=10)
-
-	cbar.ax.grid(False)
-
-	plt.tight_layout()
-
-	if outdir:
-		os.makedirs(outdir, exist_ok=True)
-		plt.savefig(os.path.join(outdir, 'cnv_summary_heatmap.png'), dpi=300, bbox_inches='tight')
-	else:
-		plt.show()
-
-	plt.close(fig)
+	if output_file:
+		os.makedirs(os.path.dirname(output_file) or '.', exist_ok=True)
+		fig.savefig(output_file, dpi=300, bbox_inches='tight')
+		plt.close(fig)
+	
 
 
 def plot_cnv_from_adata(adata, obsm_key='cnv_mat', var_key='chr_arm', **kwargs):
-	'''Call plot_cnv() from adata object.
+	'''Helper for calling plot_cnv() from an adata object.
 
 	Parameters
 	    adata : AnnData

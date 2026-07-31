@@ -1,7 +1,8 @@
 from .core import SwiftCNV, run_from_adata
 from .hmm import CNVHMM, get_subclusters, filter_states_with_bgm, run_hmm
 from .utils import get_cell_order, get_gene_order, read_gtf, load_chr_arms
-from .utils import add_mat_to_adata, load_output, summarise_by_chr_arm, cnv_score, get_genes_chr_arm, get_cancer_type_correlation
+from .utils import add_mat_to_adata, load_output, summarise_by_obs, summarise_by_var
+from .utils import cnv_score, get_genes_chr_arm, get_cancer_type_correlation
 from .utils import plot_cnv, plot_cnv_multi, plot_cnv_summary, plot_cnv_from_adata
 
 __all__ = [
@@ -17,7 +18,8 @@ __all__ = [
 	'load_chr_arms',
 	'add_mat_to_adata',
 	'load_output',
-	'summarise_by_chr_arm',
+	'summarise_by_obs',
+	'summarise_by_var',
 	'cnv_score',
 	'get_genes_chr_arm',
 	'get_cancer_type_correlation',
