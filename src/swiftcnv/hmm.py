@@ -296,17 +296,17 @@ def run_hmm(x, cell_order=None, gene_order=None, output_dir=None, hmm_by='subclu
 				subclusters[ref_cells] = 'ref'
 				subclusters[~ref_cells] = get_subclusters(cnv_matrix[~ref_cells, :], n_clusters=n_clusters).astype(str)
 			else:
-				subclusters[ref_cells] = np.char.add(groups[ref_cells], '_ref')
+				subclusters[ref_cells] = np.array([f'{g}_ref' for g in groups[ref_cells]], dtype=object)
 				obs_res = get_subclusters(cnv_matrix[~ref_cells, :], n_clusters=n_clusters, groups=groups[~ref_cells], threads=threads)
-				subclusters[~ref_cells] = np.char.add(np.char.add(groups[~ref_cells], '_'), obs_res.astype(str))
+				subclusters[~ref_cells] = np.array([f"{g}_{r}" for g, r in zip(groups[~ref_cells], obs_res)], dtype=object)
 		elif hmm_by == 'sample':
 			logger.info(f'    HMM segmentation by sample')
 			if groups is None:
 				subclusters[ref_cells] = 'ref'
 				subclusters[~ref_cells] = '0'
 			else:
-				subclusters[ref_cells] = np.char.add(groups[ref_cells], '_ref')
-				subclusters[~ref_cells] = np.char.add(groups[~ref_cells], '_0')
+				subclusters[ref_cells] = np.array([f'{g}_ref' for g in groups[ref_cells]], dtype=object)
+				subclusters[~ref_cells] = np.array([f'{g}_0' for g in groups[~ref_cells]], dtype=object)
 		else:
 			raise ValueError(f'Unrecogized HMM mode "{hmm_by}", hmm_by must be ["cell", "subcluster", "sample"]')
 
