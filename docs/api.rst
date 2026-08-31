@@ -1,9 +1,9 @@
 API
 =========
 
-```
-import swiftcnv as cnv
-```
+.. code-block:: python
+
+   import swiftcnv as cnv
 
 .. toctree::
    :maxdepth: 1
