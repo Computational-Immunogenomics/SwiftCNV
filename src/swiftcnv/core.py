@@ -21,9 +21,6 @@ class SwiftCNV:
 
 	Direct implementation of the R inferCNV pipeline:
 		https://github.com/broadinstitute/infercnv
-	Key reference files in the R package:
-	- R/inferCNV.R  (main run method)
-	- R/inferCNV_ops.R (individual operations)
 
 	Parameters
 	----------

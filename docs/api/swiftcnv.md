@@ -8,6 +8,6 @@
 .. autosummary::
    :toctree: generate
 
-   swiftcnv
+   SwiftCNV
    run_from_adata
 
