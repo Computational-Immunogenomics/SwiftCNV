@@ -35,29 +35,29 @@ immune_gene_pattern = r'^(HLA-|IGH|IGK|IGL)'
 def get_cell_order(df, counts, cell_names, column='reference', vals=None, sample_col=None, sep='\t'):
 	'''Build cell_order dataframe and filter matrix to the common cells
 
-	Parameters:
-	----------
-	    df : Filepath or pd.DataFrame
-	        Dataframe to get cellnames, reference status and sample values
-	    counts : np.array or scipy.sparse matrix
-	        Input matrix (cells x genes)
-	    cell_names : list-like
-	        Cell names of <counts> (rows).
-	    column : str
-	        column from <df> to get reference status.
-		vals : str or list
-	        Value(s) of <column> to consider a cell to be reference.
-	        Default: treat <column> as bool.
-		sample_col : str
-	        If defined, will be added to column 'sample'
-	    sep : str
-	        Column separator to read <df> from file.
+    Parameters:
+    ----------
+	df : Filepath or pd.DataFrame
+		Dataframe to get cellnames, reference status and sample values
+	counts : np.array or scipy.sparse matrix
+		Input matrix (cells x genes)
+	cell_names : list-like
+		Cell names of <counts> (rows).
+	column : str
+		column from <df> to get reference status.
+	vals : str or list
+		Value(s) of <column> to consider a cell to be reference.
+		Default: treat <column> as bool.
+	sample_col : str
+		If defined, will be added to column 'sample'
+	sep : str
+		Column separator to read <df> from file.
 
-	Returns:
-	----------
-	    tuple[(np.array|scipy.sparse matrix), pd.DataFrame]
-	        Filtered count matrix and cell_order dataframe
-	'''
+    Returns:
+    ----------
+	tuple[(np.array|scipy.sparse matrix), pd.DataFrame]
+		Filtered count matrix and cell_order dataframe
+    '''
 
 	if isinstance(df, str):
 		cols = ['cell_name', column]
@@ -94,19 +94,19 @@ def get_gene_order(counts, genes, annotations, **kwargs):
 
 	Parameters:
 	----------
-	    counts : np.array or scipy.sparse matrix
-	        Input matrix (cells x genes)
-	    genes : list-like
-	        Order of genes in <counts> (columns).
-	    annotations : str or pd.DataFrame
-	        Path to GTF or dataframe with gene annotations.
-	        If a path, it will be opened with `read_gtf`.
-	    **kwargs : additional kwargs are passed to `read_gtf`.
+	counts : np.array or scipy.sparse matrix
+		Input matrix (cells x genes)
+	genes : list-like
+		Order of genes in <counts> (columns).
+	annotations : str or pd.DataFrame
+		Path to GTF or dataframe with gene annotations.
+		If a path, it will be opened with `read_gtf`.
+	**kwargs : additional kwargs are passed to `read_gtf`.
 
 	Returns:
 	----------
-	    tuple[(np.array|scipy.sparse matrix), pd.DataFrame]
-	        Filtered count matrix and gene_order dataframe
+	tuple[(np.array|scipy.sparse matrix), pd.DataFrame]
+		Filtered count matrix and gene_order dataframe
 	'''
 
 	if isinstance(annotations, str):
@@ -125,21 +125,21 @@ def read_gtf(gtf_path, arms_path=None, sex_chr=False, exclude_immune=False):
 
 	Parameters:
 	----------
-	    gtf_path : str
-	        Path to gtf gene annotation file.
-	    arms_path : str or pd.DataFrame
-	        path to TSV file to read or dataframe.
-	        default is swiftcnv's built-in chr_arms.tsv file (human)
-	        Mandatory columns : ['chr', 'arm', 'start', 'end']
-	    sex_chr : bool
-	        Keep genes from chromosomes X and Y (excluded by default)
-	    exclude_immune : bool
-	        Exclude genes that start with '(HLA-|IGH|IGK|IGL)'
+	gtf_path : str
+		Path to gtf gene annotation file.
+	arms_path : str or pd.DataFrame
+		path to TSV file to read or dataframe.
+		default is swiftcnv's built-in chr_arms.tsv file (human)
+		Mandatory columns : ['chr', 'arm', 'start', 'end']
+	sex_chr : bool
+		Keep genes from chromosomes X and Y (excluded by default)
+	exclude_immune : bool
+		Exclude genes that start with '(HLA-|IGH|IGK|IGL)'
 
 	Returns:
 	----------
-	    pd.DataFrame
-	        Dataframe with columns ['gene', 'chr', 'arm', 'chr_arm', 'start', 'end']
+	pd.DataFrame
+		Dataframe with columns ['gene', 'chr', 'arm', 'chr_arm', 'start', 'end']
 	'''
 
 	genes = set()
@@ -196,15 +196,15 @@ def load_chr_arms(arms_path=None):
 
 	Parameters:
 	----------
-	    arms_path : str
-	        Path to TSV file to read.
-	        default is swiftcnv's built-in chr_arms.tsv file (human: hg38)
-	        Mandatory columns: ['chr', 'arm', 'start', 'end']
+	arms_path : str
+		Path to TSV file to read.
+		default is swiftcnv's built-in chr_arms.tsv file (human: hg38)
+		Mandatory columns: ['chr', 'arm', 'start', 'end']
 	
 	Returns:
 	----------
-	   pd.DataFrame
-	       Dataframe with columns ['chr', 'arm', 'start_arm', 'end_arm']
+	pd.DataFrame
+		Dataframe with columns ['chr', 'arm', 'start_arm', 'end_arm']
 	'''
 
 	cols = ['chr', 'arm', 'start', 'end']
@@ -249,20 +249,20 @@ def add_mat_to_adata(adata, matrix, cell_order, gene_order, cnv_key='cnv_mat',
 
 	Parameters:
 	----------
-	    adata : AnnData object
-	        Object to add the matrix to.
-	    matrix : np.array
-	        CNV matrix, output of SwiftCNV.run().
-	    cell_order : pd.DataFrame
-	        Dataframe with index (cells) information
-	    gene_order : pd.DataFrame
-	        Dataframe with column (genes) information
-	    cnv_key : str
-	        Key for adding CNV matrix to adata.obsm
-	    reference_key : str
-	        Key for adding reference status to adata.obs
-	    inplace : bool
-	        Edit <adata> instead of returning a copy.
+	adata : AnnData object
+		Object to add the matrix to.
+	matrix : np.array
+		CNV matrix, output of SwiftCNV.run().
+	cell_order : pd.DataFrame
+		Dataframe with index (cells) information
+	gene_order : pd.DataFrame
+		Dataframe with column (genes) information
+	cnv_key : str
+		Key for adding CNV matrix to adata.obsm
+	reference_key : str
+		Key for adding reference status to adata.obs
+	inplace : bool
+		Edit <adata> instead of returning a copy.
 
 	Returns:
 	----------
@@ -304,18 +304,18 @@ def load_output(output_dir, adata=None, **kwargs):
 
 	Parameters:
 	----------
-	    output_dir: str
-	        Path to the SwiftCNV output files containing the matrix, genes and annotations.
-	    adata: AnnData
-	        If defined, the outputs will be added to the AnnData object via `add_mat_to_adata`.
-	    **kwargs: Additional kwargs are passed to `add_mat_to_adata`.
+	output_dir: str
+		Path to the SwiftCNV output files containing the matrix, genes and annotations.
+	adata: AnnData
+		If defined, the outputs will be added to the AnnData object via `add_mat_to_adata`.
+	**kwargs: Additional kwargs are passed to `add_mat_to_adata`.
 
 	Returns:
 	----------
-	    tuple[np.array, pd.DataFrame, pd.DataFrame]
-	        CNV matrix, cell_order and gene_order dataframes (if adata is not defined)
+	tuple[np.array, pd.DataFrame, pd.DataFrame]
+		CNV matrix, cell_order and gene_order dataframes (if adata is not defined)
 
-	    If defined adata, updated copy of <adata> or None (if inplace=True)
+	If defined adata, updated copy of <adata> or None (if inplace=True)
 	'''
 
 	matrix_path = os.path.join(output_dir, 'cnv_scores.npz')
@@ -338,19 +338,19 @@ def summarise_by_obs(adata, obsm_key='cnv_mat', by='sample', mode='mean'):
 
 	Parameters:
 	----------
-	   adata : AnnData
-	        Input AnnData object.
-	   obsm_key : str
-	        Key of the obsm layer to summarise. Default: 'cnv_mat'.
-	   by : str
-	        Key of the obs layer to group columns by. Default: 'sample'.
-	   mode : str
-	        Summarise method to use ('mean' or 'median', default: 'mean').
+	adata : AnnData
+		Input AnnData object.
+	obsm_key : str
+		Key of the obsm layer to summarise. Default: 'cnv_mat'.
+	by : str
+		Key of the obs layer to group columns by. Default: 'sample'.
+	mode : str
+		Summarise method to use ('mean' or 'median', default: 'mean').
 
 	Returns:
 	----------
-	    pd.DataFrame
-	        Summarised matrix
+	pd.DataFrame
+		Summarised matrix
 	'''
 
 	if obsm_key not in adata.obsm:
@@ -374,23 +374,23 @@ def summarise_by_var(adata, obsm_key='cnv_mat', by='chr_arm',
 
 	Parameters:
 	----------
-	   adata : AnnData
-	        Input AnnData object.
-	   obsm_key : str
-	        Key of the obsm layer to summarise. Default: 'cnv_mat'.
-	   by : str
-	        Key of the var layer to group columns by. Default: 'chr_arm'.
-	   key_added : str
-	        Key of the obsm layer to add the result. Default: 'cnv_mat_arm'.
-	   mode : str
-	        Summarise method to use ('mean' or 'median', default: 'mean').
-	   inplace : bool
-	        Edit <adata> instead of returning a copy.
+	adata : AnnData
+		Input AnnData object.
+	obsm_key : str
+		Key of the obsm layer to summarise. Default: 'cnv_mat'.
+	by : str
+		Key of the var layer to group columns by. Default: 'chr_arm'.
+	key_added : str
+		Key of the obsm layer to add the result. Default: 'cnv_mat_arm'.
+	mode : str
+		Summarise method to use ('mean' or 'median', default: 'mean').
+	inplace : bool
+		Edit <adata> instead of returning a copy.
 
 	Returns:
 	----------
-	    pd.DataFrame
-	        Summarised matrix (if inplace=False)
+	pd.DataFrame
+		Summarised matrix (if inplace=False)
 	'''
 
 	if obsm_key not in adata.obsm:
@@ -413,32 +413,35 @@ def summarise_by_var(adata, obsm_key='cnv_mat', by='chr_arm',
 
 
 def cnv_score(adata, obsm_key='cnv_mat_arms', key_added='cnv_score', inplace=False):
-	'''Calculate CNV burden as the mean of the CNV scores squared.
+	r'''Calculate CNV burden as the mean of the CNV scores squared.
 
-	$$S_i = \frac{1}{M} \sum_{j=1}^{M} x_{ij}^2$$
+    .. math::
 
-	Where:
-	* $S_i$ is the CNV burden score for cell $i$ (stored in `adata.obs[key_added]`).
-	* $M$ is the total number of features (columns in `adata.obsm[obsm_key]`).
-	* $x_{ij}$ represents the CNV value for feature $j$ in cell $i$.
+        S_i = \frac{1}{M} \sum_{j=1}^{M} x_{ij}^2
 
-	Paremeters:
-	----------
-		adata : AnnData
-			Input AnnData object.
-		obsm_key : str
-	        Key of the obsm layer to summarise. Default: 'cnv_mat'.
-		key_added : str (default: 'cnv_score')
-			adata.obs key under which to add the cnv scores.
-		inplace : bool (default: False)
-			Whether to place calculated metrics in .obs or return them.
-	
-	Returns:
-	----------
-	Returns a numpy.array with calculated cnv scores if inplace=False, else returns an AnnData object where it sets the following field:
-	adata.obs['cnv_score' | key_added]
+    Where:
 
-	'''
+    * :math:`S_i` is the CNV burden score for cell :math:`i` (stored in ``adata.obs[key_added]``).
+    * :math:`M` is the total number of features (columns in ``adata.obsm[obsm_key]``).
+    * :math:`x_{ij}` represents the CNV value for feature :math:`j` in cell :math:`i`.
+
+    Parameters
+    ----------
+    adata : AnnData
+        Input AnnData object.
+    obsm_key : str, default 'cnv_mat_arms'
+        Key of the obsm layer to summarise.
+    key_added : str, default 'cnv_score'
+        `adata.obs` key under which to add the CNV scores.
+    inplace : bool, default False
+        Whether to place calculated metrics in `.obs` or return them.
+
+    Returns
+    -------
+    numpy.ndarray or AnnData
+        If `inplace=False`, returns a 1D numpy array with calculated CNV scores.
+        If `inplace=True`, updates `adata.obs[key_added]`
+    '''
 
 	if obsm_key in adata.obsm:
 		X = adata.obsm[obsm_key]
@@ -459,17 +462,17 @@ def get_genes_chr_arm(adata, obsm_key='cnv_mat', chr_arms=None):
 
 	Parameters:
 	----------
-	    adata : AnnData
-	        Input AnnData object.
-	   obsm_key : str
-	        The key of the obsm layer to summarise (default: 'cnv_mat').
-	    chr_arms : str or list
-	        Chromosome arm(s) to filter by.
+	adata : AnnData
+		Input AnnData object.
+	obsm_key : str
+		The key of the obsm layer to summarise (default: 'cnv_mat').
+	chr_arms : str or list
+		Chromosome arm(s) to filter by.
 
 	Returns:
 	----------
-	    pd.DataFrame
-	        Dataframe with all the genes corresponding to the specified chromosome arm.
+	pd.DataFrame
+		Dataframe with all the genes corresponding to the specified chromosome arm.
 	'''
 	if isinstance(chr_arms, str):
 		chr_arms = [chr_arms]
@@ -650,46 +653,46 @@ def plot_cnv(mat, ref_cells, regions, output_file=None, figsize=(20, 12),
 
 	Parameters:
 	----------
-	    mat : np.array
-	        Input matrix to plot
-	    ref_cells : np.array
-	        Array of bool with reference status
-	    regions : np.array
-	        Array of str with gene regions (chr, arms...)
-	    output_file : str
-	        Optional output filename. Default: return the figure
-	    figsize : tuple of 2 ints
-	        Figure size
-	    cmap : str
-	        cmap to use in the heatmap. Default: 'RdBu_r'
-	    cluster_cells : bool
-	        Use hierarchical clustering to order the cells
-	    add_dendrogram : bool
-	        Add clustering dendrogram to the left
-	    group_cells : bool
-	        Group cells by first kwarg. Default: True
-	    vmin : float
-	        Min value for the colormap. Default: auto around vcenter
-	    vmax : float
-	        Max value for the colormap. Default: auto around vcenter
-	    vcenter : float
-	        Value on the center of the colormap. Default: 0
-	    header : bool
-	        Add a header with number of cells and genes
-	    threads : int
-	        number of threads for clustering
-	    **kwargs : np.arrays
-	        Each array matches the cells and will add a vertical bar to the
-	        left (e.g., sample, cell-type, subcluster...). If <group_cells>
-	        is True, the first kwarg stratifies the clustering so the cells
-	        will always separated in these groups
+	mat : np.array
+		Input matrix to plot
+	ref_cells : np.array
+		Array of bool with reference status
+	regions : np.array
+		Array of str with gene regions (chr, arms...)
+	output_file : str
+		Optional output filename. Default: return the figure
+	figsize : tuple of 2 ints
+		Figure size
+	cmap : str
+		cmap to use in the heatmap. Default: 'RdBu_r'
+	cluster_cells : bool
+		Use hierarchical clustering to order the cells
+	add_dendrogram : bool
+		Add clustering dendrogram to the left
+	group_cells : bool
+		Group cells by first kwarg. Default: True
+	vmin : float
+		Min value for the colormap. Default: auto around vcenter
+	vmax : float
+		Max value for the colormap. Default: auto around vcenter
+	vcenter : float
+		Value on the center of the colormap. Default: 0
+	header : bool
+		Add a header with number of cells and genes
+	threads : int
+		number of threads for clustering
+	**kwargs : np.arrays
+		Each array matches the cells and will add a vertical bar to the
+		left (e.g., sample, cell-type, subcluster...). If <group_cells>
+		is True, the first kwarg stratifies the clustering so the cells
+		will always separated in these groups
 
 	Returns:
 	----------
-	    None
-	        If <output_file> is defined
-	    Figure
-	        matplotlib figure for further processing
+	None
+		If <output_file> is defined
+	Figure
+		matplotlib figure for further processing
 	'''
 
 	# Separate ref and obs
@@ -943,20 +946,20 @@ def plot_cnv_multi(mat, ref_cells, regions, groups, output_file, **kwargs):
 
 	Parameters:
 	----------
-	    mat : np.array
-	        Input matrix to plot
-	    ref_cells : np.array
-	        Array of bool with reference status
-	    regions : np.array
-	        Array of str with gene regions (chr, arms...)
-		groups : np.array
-			Groups in which divide the pdf pages
-		output_file : str
-	        output pdf filename
+	mat : np.array
+		Input matrix to plot
+	ref_cells : np.array
+		Array of bool with reference status
+	regions : np.array
+		Array of str with gene regions (chr, arms...)
+	groups : np.array
+		Groups in which divide the pdf pages
+	output_file : str
+		output pdf filename
 
 	Returns:
 	----------
-		A PDF file with one CNV heatmap of each group per page.
+	A PDF file with one CNV heatmap of each group per page.
 	'''
 
 	if not output_file.endswith('.pdf'):
@@ -992,16 +995,16 @@ def plot_cnv_summary(adata, by, obsm_key='cnv_mat_arms', mode='mean',
 
 	Parameters:
 	----------
-	    adata : AnnData
-	        Input AnnData object.
-	   	by : str
-	        Key of the obs layer to group cells.
-		obsm_key : str
-	        Key of the obsm layer to summarise. Default: 'cnv_mat_arms'.
-		mode : str
-			Summarise method to use ('mean' or 'median', default: 'mean'). 
-		output_file : str
-	        output filename to save the plot
+	adata : AnnData
+		Input AnnData object.
+	by : str
+		Key of the obs layer to group cells.
+	obsm_key : str
+		Key of the obsm layer to summarise. Default: 'cnv_mat_arms'.
+	mode : str
+		Summarise method to use ('mean' or 'median', default: 'mean'). 
+	output_file : str
+		output filename to save the plot
 	'''
 
 	mat = summarise_by_obs(adata, obsm_key=obsm_key, by=by, mode=mode)
@@ -1034,16 +1037,16 @@ def plot_cnv_from_adata(adata, obsm_key='cnv_mat', var_key='chr_arm', **kwargs):
 
 	Parameters
 	----------
-	    adata : AnnData
-	        Input AnnData object with all values to plot.
-	    obsm_key : str
-	        Key of <adata>.obsm with matrix to plot. Default: 'cnv_mat'.
-	    var_key : str or None
-	        Key of <adata>.var to group genes if columns are genes. Default: 'chr_arm'.
-	        Set to None for preserving the columns of the original matrix.
-	    **kwargs :
-	        They can be columns of <adata>.obs to add as vertical bars on the left.
-			Else, will be passed to plot_cnv() base function.
+	adata : AnnData
+		Input AnnData object with all values to plot.
+	obsm_key : str
+		Key of <adata>.obsm with matrix to plot. Default: 'cnv_mat'.
+	var_key : str or None
+		Key of <adata>.var to group genes if columns are genes. Default: 'chr_arm'.
+		Set to None for preserving the columns of the original matrix.
+	**kwargs : str
+		They can be columns of <adata>.obs to add as vertical bars on the left.
+		Else, will be passed to plot_cnv() base function.
 	'''
 
 	mat = adata.obsm[obsm_key].values
