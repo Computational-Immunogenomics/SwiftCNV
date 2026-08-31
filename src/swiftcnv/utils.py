@@ -398,6 +398,13 @@ def summarise_by_var(adata, obsm_key='cnv_mat', by='chr_arm',
 
 def cnv_score(adata, obsm_key='cnv_mat_arms', key_added='cnv_score', inplace=False):
 	'''Calculate CNV burden as the mean of the CNV scores squared.
+
+	$$S_i = \frac{1}{M} \sum_{j=1}^{M} x_{ij}^2$$
+
+	Where:
+	* $S_i$ is the CNV burden score for cell $i$ (stored in `adata.obs[key_added]`).
+	* $M$ is the total number of features (columns in `adata.obsm[obsm_key]`).
+	* $x_{ij}$ represents the CNV value for feature $j$ in cell $i$.
 	'''
 
 	if obsm_key in adata.obsm:
@@ -415,8 +422,7 @@ def cnv_score(adata, obsm_key='cnv_mat_arms', key_added='cnv_score', inplace=Fal
 
 
 def get_genes_chr_arm(adata, obsm_key='cnv_mat', chr_arms=None):
-	'''
-	Get the genes corresponding to a specific chromosome arm from an AnnData object.
+	'''Get the genes corresponding to a specific chromosome arm from an AnnData object.
 
 	Parameters:
 	    adata : AnnData
@@ -444,7 +450,8 @@ def get_genes_chr_arm(adata, obsm_key='cnv_mat', chr_arms=None):
 
 
 def get_cancer_type_correlation(mat, arms, groups=None, sample_type=None):
-	'''Get correlation scores to HMF gains by arm by cancer type
+	'''Get correlation scores to copy number gains retreived from
+	https://doi.org/10.1038/s41586-023-06054-z by arm by cancer type. 
 	'''
 
 	if sample_type == 'primary':
@@ -954,7 +961,6 @@ def plot_cnv_summary(adata, by, obsm_key='cnv_mat_arms', mode='mean',
 		fig.savefig(output_file, dpi=300, bbox_inches='tight')
 		plt.close(fig)
 	
-
 
 def plot_cnv_from_adata(adata, obsm_key='cnv_mat', var_key='chr_arm', **kwargs):
 	'''Helper for calling plot_cnv() from an adata object.
