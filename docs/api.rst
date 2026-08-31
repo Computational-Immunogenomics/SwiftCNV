@@ -1,4 +1,5 @@
-# API
+API
+=========
 
 ```
 import swiftcnv as cnv
