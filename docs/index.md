@@ -6,4 +6,5 @@
 :maxdepth: 1
 
 tutorials.rst
+api.rst
 ```
