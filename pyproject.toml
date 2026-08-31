@@ -56,7 +56,8 @@ Repository = "https://github.com/Computational-Immunogenomics/SwiftCNV"
 
 
 [tool.hatch.envs.docs]
-detached = true
+detached = false
+features = ["tutorial"]
 dependencies = [
     "sphinx>=4.0",
     "sphinx-book-theme",
