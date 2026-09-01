@@ -3,11 +3,15 @@
 ```{eval-rst}
 .. module:: swiftcnv
    :no-index:
-.. automodule:: swiftcnv
-   :members:
+
+.. autoclass:: SwiftCNV
+   :no-index:
+   :members: run, plot
+
 .. autosummary::
    :toctree: generate
 
-   swiftcnv.SwiftCNV
+   SwiftCNV
+   SwiftCNV.run
+   SwiftCNV.plot
    run_from_adata
-
