@@ -222,10 +222,10 @@ def get_subclusters(cnv_states, n_clusters=3, linkage='ward', groups=None, threa
 	----------
 	cnv_states : np.ndarray
 	    Cells x Genes matrix of CNV scores
-	n_clusters : int
-	    Number of subclusters to identify (default=3)
-	linkage : str
-	    Linkage for agglomerative clustering (default='ward')
+	n_clusters : int, default 3
+	    Number of subclusters to identify
+	linkage : str, default 'ward'
+	    Linkage for agglomerative clustering
 
 	Returns
 	-------
@@ -278,7 +278,7 @@ def run_hmm(x, cell_order=None, gene_order=None, output_dir=None, hmm_by='subclu
 	output_dir : str or pathlib.Path or None, default None
 	    Directory in which to save output files. If ``None``, outputs are
 	    not saved to disk.
-	hmm_by : {'subcluster', ...}, default 'subcluster'
+	hmm_by : {'subcluster', 'cell', 'sample'}, default 'subcluster'
 	    Grouping level used for HMM analysis.
 	n_clusters : int, default 3
 	    Number of clusters to identify.
