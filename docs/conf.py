@@ -21,8 +21,8 @@ sys.path.insert(0, str(HERE / "extensions"))
 project_name = "SwiftCNV"
 author = "Adrian Parrilla and Sergio Esteban"
 copyright = f"{datetime.now():%Y}, {author}."
-version = "0.1.0"
-release = "0.1.0"
+version = "0.2.0"
+release = "0.2.0"
 repository_url = "https://github.com/Computational-Immunogenomics/SwiftCNV"
 
 

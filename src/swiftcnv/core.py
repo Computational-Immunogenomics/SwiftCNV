@@ -24,7 +24,7 @@ class SwiftCNV:
 	Parameters
 	----------
 	counts : scipy.sparse.csc_matrix (cells x genes)
-	ref_cells : numpy.array
+	ref_cells : numpy.ndarray
 	    True for reference cells, False for query (obs) cells
 	gene_order : pandas.DataFrame
 	    DataFrame with columns ['gene', 'chr', 'arm', 'chr_arm', 'start', 'end']

@@ -4,10 +4,6 @@
 .. module:: swiftcnv
    :no-index:
 
-.. autoclass:: SwiftCNV
-   :no-index:
-   :members: run, plot
-
 .. autosummary::
    :toctree: generate
 
