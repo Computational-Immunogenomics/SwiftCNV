@@ -15,20 +15,19 @@ logger = logging.getLogger('SwiftCNV')
 
 
 class SwiftCNV:
-	'''
-	Python implementation of the inferCNV algorithm for inferring
+	'''Python implementation of the inferCNV algorithm for inferring
 	copy number variations from scRNA-seq data.
 
 	Direct implementation of the R inferCNV pipeline:
-		https://github.com/broadinstitute/infercnv
+	    https://github.com/broadinstitute/infercnv
 
 	Parameters
 	----------
 	counts : scipy.sparse.csc_matrix (cells x genes)
-	ref_cells : np.array
-		True for reference cells, False for query (obs) cells
-	gene_order : pd.DataFrame
-		DataFrame with columns ['gene', 'chr', 'arm', 'chr_arm', 'start', 'end']
+	ref_cells : numpy.array
+	    True for reference cells, False for query (obs) cells
+	gene_order : pandas.DataFrame
+	    DataFrame with columns ['gene', 'chr', 'arm', 'chr_arm', 'start', 'end']
 	'''
 
 	def __init__(self, counts, cell_order, gene_order):
@@ -59,13 +58,13 @@ class SwiftCNV:
 
 
 	def _filter_and_sort_genes(self, min_cells_per_gene=3):
-		'''
-		1. Remove genes expressed in fewer than min_cells cells,
+		'''1. Remove genes expressed in fewer than min_cells cells,
 		intersect with gene_order, and sort by chromosomal position.
 
 		R equivalent:
-			filter_genes_by_count_min_cell, order_by_genome_position
+		    filter_genes_by_count_min_cell, order_by_genome_position
 		'''
+
 		n_before = self.expr.shape[1]
 
 		gene_mask = self.expr.getnnz(axis=0) >= min_cells_per_gene
@@ -83,12 +82,12 @@ class SwiftCNV:
 
 
 	def _normalize(self):
-		'''
-		2. Normalize each cell to a fixed library size (CPM-like).
+		'''2. Normalize each cell to a fixed library size (CPM-like).
 
 		R equivalent:
-			normalize_counts_by_seq_depth
+		    normalize_counts_by_seq_depth
 		'''
+
 		cell_totals = self.expr.sum(axis=1)
 		scaling_factor = cell_totals.mean()
 		if scaling_factor == 0:
@@ -100,13 +99,13 @@ class SwiftCNV:
 
 
 	def _filter_by_cutoff(self, cutoff=0.1):
-		'''
-		3. Remove genes whose mean normalized expression
+		'''3. Remove genes whose mean normalized expression
 		across reference cells is below cutoff
 
 		R equivalent:
-			filter_genes_by_cutoff
+		    filter_genes_by_cutoff
 		'''
+		
 		n_before = self.expr.shape[1]
 		gene_means = np.asarray(self.expr[self._ref_cells, :].mean(axis=0)).ravel()
 
@@ -120,26 +119,26 @@ class SwiftCNV:
 
 
 	def _log_transform(self):
-		'''
-		4. Apply log2(x + 1) transform
-		*From now on self.expr is a dense np.array
+		'''4. Apply log2(x + 1) transform
+		*From now on self.expr is a dense numpy.array
 
 		R equivalent:
-			log2xplus1
+		    log2xplus1
 		'''
+		
 		self.expr = np.log2(self.expr.astype(np.float32).toarray() + 1)
 
 		logger.info('    4: Log2(x+1) transform applied')
 
 
 	def _bound_expression(self, sd_amplifier=3.0):
-		'''
-		5. Cap extreme values: for each gene,
+		'''5. Cap extreme values: for each gene,
 		clip to [mean - sd*amp, mean + sd*amp]
 
 		R equivalent:
-			apply_max_threshold_bounds
+		    apply_max_threshold_bounds
 		'''
+		
 		gene_means = self.expr.mean(axis=0, keepdims=True)
 		gene_sds = self.expr.std(axis=0, keepdims=True)
 
@@ -151,13 +150,13 @@ class SwiftCNV:
 
 
 	def _subtract_reference_mean(self, by_sample=False, _step='6a'):
-		'''
-		6a/8b. Compute mean expression across reference cells for each gene,
+		'''6a/8b. Compute mean expression across reference cells for each gene,
 		then subtract from all cells
 
 		R equivalent:
-			subtract_ref_expr_from_obs
+		    subtract_ref_expr_from_obs
 		'''
+		
 		if by_sample and self.samples is not None:
 			for sample in np.unique(self.samples):
 				mask = self.samples == sample
@@ -172,12 +171,12 @@ class SwiftCNV:
 
 
 	def _center_cells(self, _step='6b'):
-		'''
-		6b/8a. Subtract the mean value of each cell across all genes.
+		'''6b/8a. Subtract the mean value of each cell across all genes.
 
 		R equivalent:
-			center_cell_expr
+		    center_cell_expr
 		'''
+		
 		cell_means = self.expr.mean(axis=1, keepdims=True)
 		self.expr = np.subtract(self.expr, cell_means)
 
@@ -185,22 +184,22 @@ class SwiftCNV:
 
 
 	def _smooth(self, by='arm', bases_window=3e7, genes_window=75):
-		'''
-		7. Smooth expression using a window of base pairs and/or genes
+		'''7. Smooth expression using a window of base pairs and/or genes
 		If both are provided, the most restrictive bound is applied
 
 		Parameters
 		----------
 		by : str ['arm', 'chr']
-			Region type to limit smoothing, default is 'arm'
+		    Region type to limit smoothing, default is 'arm'
 		bases_window : int or None
-			Window size in base pairs
+		    Window size in base pairs
 		genes_window : int or None
-			Window size in genes
+		    Window size in genes
 
 		R equivalent:
-			smooth_by_chromosome
+		    smooth_by_chromosome
 		'''
+		
 		if bases_window is None and genes_window is None:
 			raise ValueError('Either "bases_window" or "genes_window" must be not None')
 		if by not in ['arm', 'chr']:
@@ -257,18 +256,18 @@ class SwiftCNV:
 
 
 	def _apply_noise_filter(self, noise_filter=0.1, sd_amplifier=1.5, noise_logistic=True):
-		'''
-		9. Zero out values that are likely noise rather than true CNV signal.
+		'''9. Zero out values that are likely noise rather than true CNV signal.
 		When noise_logistic=True (default):
-			Uses a logistic function centered on the noise threshold to
-			smoothly attenuate values near zero
+		    Uses a logistic function centered on the noise threshold to
+		    smoothly attenuate values near zero
 		When noise_logistic=False:
-			Hard threshold: if |value| < noise_filter, set to 0
+		    Hard threshold: if |value| < noise_filter, set to 0
 
 		R equivalent:
-			clear_noise_via_ref_mean_sd (if noise_logistic=False)
-			clear_noise_via_logistic    (if noise_logistic=True)
+		    clear_noise_via_ref_mean_sd (if noise_logistic=False)
+		    clear_noise_via_logistic    (if noise_logistic=True)
 		'''
+		
 		ref_sd = self.expr[self._ref_cells, :].std()
 		threshold = max(noise_filter, ref_sd * sd_amplifier)
 		if noise_logistic:
@@ -288,35 +287,73 @@ class SwiftCNV:
 
 
 	def _final_bounds(self, cap=1.5):
-		'''
-		10. Clip the final CNV scores to [-cap, +cap].
+		'''10. Clip the final CNV scores to [-cap, +cap].
 
 		R equivalent:
-			apply_max_threshold_bounds
+		    apply_max_threshold_bounds
 		'''
+		
 		self.expr = np.clip(self.expr, -cap, cap)
 		logger.info(f'    10: Final values clipped to [-{cap}, +{cap}].')
 
 
 	def _inverse_log_transform(self):
-		'''
-		11. Apply 2^x - 1 transform (optional)
+		'''11. Apply 2^x - 1 transform (optional)
 
 		R equivalent:
-			invert_log2xplus1
+		    invert_log2xplus1
 		'''
+		
 		self.expr = np.power(2, self.expr) - 1
 
 		logger.info('    11: 2^x - 1 transform applied')
 
 
 
-	def run(self, cutoff=0.1, min_cells_per_gene=3, noise_filter=0.1, bound_sd_amplifier=3.0,
+	def run(self, cutoff=0.1, min_cells_per_gene=3, bound_sd_amplifier=3.0,
 			substract_reference_by_sample=False, smooth_by='arm', bases_window=None,
-			genes_window=None, denoise=True, noise_logistic=True, sd_amplifier=1.0,
+			genes_window=None, denoise=True, noise_filter=0.1, sd_amplifier=1.0, noise_logistic=True,
 			final_cap=1.5, inv_log=False):
-		'''
-		Run the full SwiftCNV pipeline.
+		'''Run the full SwiftCNV pipeline.
+
+		Parameters
+		----------
+		cutoff : float, default 0.1
+		    Filter genes with normalized expression below this threshold.
+		min_cells_per_gene : int, default 3
+		    Filter genes expressed in fewer than this number of cells.
+		bound_sd_amplifier : float, default 3.0
+		    Bound values to this multiple of the standard deviation of the
+		    matrix, in log scale.
+		substract_reference_by_sample : bool, default False
+		    Subtract the mean of the reference for each sample.
+		smooth_by : {'chr', 'arm'}, default 'arm'
+		    Stratify gene smoothing by chromosome or chromosome arm.
+		bases_window : float or None, default None
+		    Window size in megabases (Mb) used for smoothing.
+		genes_window : int or None, default None
+		    Window size in number of genes used for smoothing.
+		denoise : bool, default True
+		    Denoise low values that are likely to represent noise.
+		noise_filter : float, default 0.1
+		    Threshold below which values are considered noise.
+		sd_amplifier : float, default 1.0
+		    Multiplier of the standard deviation used to identify noise.
+		    Values with absolute magnitude below ``std * sd_amplifier`` are
+		    considered noise.
+		noise_logistic : bool, default True
+		    Smooth denoised values with a logistic function instead of setting
+		    them directly to zero.
+		final_cap : float, default 1.5
+		    Hard-clip the final values to the range ``[-final_cap, final_cap]``.
+		inv_log : bool, default False
+		    Apply the inverse log transformation ``exp(x) - 1`` to the returned
+		    matrix, centering the values around 1 instead of 0.
+
+		Returns
+		-------
+		numpy.array
+		    CNV matrix stored in ``self.expr``.
 		'''
 
 		logger.info('=== Starting SwiftCNV pipeline ===')
@@ -371,10 +408,11 @@ class SwiftCNV:
 
 
 	def plot(self, groups=None, region_key='chr_arm', **kwargs):
-		'''Helper to run swiftcnv.plot_cnv from a Swiftcnv object
-		that has finished the run. If <groups> is defined, it calls
-		plot_cnv_multi with those groups.
+		'''Helper to run :func:`plot_cnv` from a :class:`Swiftcnv` object
+		that has finished the run. If ``groups`` is defined, it calls
+		:func:`plot_cnv_multi` with those groups.
 		'''
+
 		if hasattr(self.expr, 'toarray'):
 			mat = self.expr.astype(np.float32).toarray()
 		else:
@@ -395,56 +433,61 @@ def run_from_adata(adata, gtf_file, output_dir=None, cells_file=None, reference_
 				   hmm_by='subcluster', n_clusters=3, threads=1, **kwargs):
 	'''Helper function for running the SwiftCNV pipeline from an AnnData object or file.
 
-    Parameters
-    ----------
-    adata : str or AnnData
-        Path to input ``.h5ad`` file or an in-memory ``AnnData`` object.
-    gtf_file : str or pd.DataFrame
-        Path to gene annotations file (``.gtf``) or a DataFrame.
-    output_dir : str, optional
-        Output directory for writing results and plots.
-    cells_file : str, optional
-        Path to a file containing cell metadata (cell names, reference status, and samples).
-        Default: uses data from ``adata.obs``.
-    reference_col : str, default 'reference'
-        Column name in ``adata.obs`` or ``cells_file`` defining reference status.
-    reference_vals : list, optional
-        Values within ``reference_col`` that indicate reference cells.
-        Default: treats ``reference_col`` as a boolean series.
-    read_X : bool, default False
-        Whether to read the ``adata.X`` matrix. If False, reads ``adata.layers['counts']``.
-    sample_col : str, optional
-        Column name in ``cells_file`` or ``adata.obs`` to retrieve sample IDs.
-        Used to run sample-level analyses.
-    arms_file : str or pd.DataFrame, optional
-        File path or DataFrame containing gene chromosome arm annotations.
-        See :func:`swiftcnv.load_chr_arms`.
-    sex_chr : bool, default False
-        Whether to keep genes from sex chromosomes (X and Y). Excluded by default.
-    exclude_immune : bool, default False
-        Whether to exclude genes matching the pattern ``(HLA-|IGH|IGK|IGL)``.
-    plot : bool, default False
-        Whether to output heatmaps and sample heatmaps to ``output_dir``.
-    run_hmm : bool, default False
-        Whether to perform HMM segmentation analysis on the CNV scores.
-    hmm_by : {'subcluster', 'sample', 'cell'}, default 'subcluster'
-        Level at which to stratify HMM segmentation: by subclusters within each sample,
-        by whole samples, or by individual cells.
-    n_clusters : int, default 3
-        Number of clusters to use when ``hmm_by='subcluster'``.
-    threads : int, default 1
-        Number of threads for multithreaded processing.
+	Parameters
+	----------
+	adata : str or anndata.AnnData
+	    Path to input ``.h5ad`` file or an in-memory AnnData object.
+	gtf_file : str or pandas.DataFrame
+	    Path to gene annotations file (``.gtf``) or a DataFrame.
+	output_dir : str, optional
+	    Output directory for writing results and plots.
+	cells_file : str, optional
+	    Path to a file containing cell metadata (cell names, reference status, and samples).
+	    Default: uses data from ``adata.obs``.
+	reference_col : str, default 'reference'
+	    Column name in ``adata.obs`` or ``cells_file`` defining reference status.
+	reference_vals : list-like, optional
+	    Values within ``reference_col`` that indicate reference cells.
+	    Default: treats ``reference_col`` as a boolean series.
+	read_X : bool, default False
+	    Whether to read the ``adata.X`` matrix. If False, reads ``adata.layers['counts']``.
+	sample_col : str, optional
+	    Column name in ``cells_file`` or ``adata.obs`` to retrieve sample IDs.
+	    Used to run sample-level analyses.
+	arms_file : str or pandas.DataFrame, optional
+	    File path or DataFrame containing gene chromosome arm annotations.
+	    See :func:`~swiftcnv.load_chr_arms`.
+	sex_chr : bool, default False
+	    Whether to keep genes from sex chromosomes (X and Y). Excluded by default.
+	exclude_immune : bool, default False
+	    Whether to exclude genes matching the pattern ``(HLA-|IGH|IGK|IGL)``.
+	plot : bool, default False
+	    Whether to output heatmaps and sample heatmaps to ``output_dir``.
+	run_hmm : bool, default False
+	    Whether to perform HMM segmentation analysis on the CNV scores.
+	hmm_by : {'subcluster', 'sample', 'cell'}, default 'subcluster'
+	    Level at which to stratify HMM segmentation: by subclusters within each sample,
+	    by whole samples, or by individual cells.
+	n_clusters : int, default 3
+	    Number of clusters to use when ``hmm_by='subcluster'``.
+	threads : int, default 1
+	    Number of threads for multithreaded processing.
+	**kwargs
+	    Additional keyword arguments passed to :meth:`~swiftcnv.Swiftcnv.run`.
 
-    Returns
-    -------
-    AnnData or tuple or None
-        * **AnnData**: If ``run_hmm=False`` and an ``AnnData`` object was provided.
-          CNV scores are stored in ``adata.obsm['cnv_mat']``, cell metadata in ``adata.obs``,
-          and gene metadata in ``adata.var`` (including a ``'has_cnv'`` boolean column).
-        * **tuple of (AnnData, pd.DataFrame, pd.DataFrame or None)**: If ``run_hmm=True``,
-          returns ``(updated_adata, cnv_states, tumor_subclusters)``.
-        * **None**: If input ``adata`` was provided as a file path (``.h5ad``).
-    '''
+	Returns
+	-------
+	anndata.AnnData or tuple[anndata.AnnData, pandas.DataFrame, pandas.DataFrame or None] or None
+	    * If ``run_hmm=False`` and an ``AnnData`` object was provided, returns
+	      the updated ``AnnData`` object. CNV scores are stored in
+	      ``adata.obsm['cnv_mat']``, cell metadata in ``adata.obs``, and gene
+	      metadata in ``adata.var``, including boolean column ``'has_cnv'``.
+	    * If ``run_hmm=True``, returns a tuple of
+	      ``(updated_adata, cnv_states, tumor_subclusters)``, where
+	      ``cnv_states`` is a ``pandas.DataFrame`` and ``tumor_subclusters``
+	      is a ``pandas.DataFrame`` or ``None``.
+	    * If ``adata`` was provided as a file path (``.h5ad``), returns ``None``.
+	'''
 
 	n_steps = 4
 	if plot and output_dir is not None:

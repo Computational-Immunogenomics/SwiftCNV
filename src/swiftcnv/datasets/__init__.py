@@ -4,9 +4,9 @@ from importlib.resources import files, as_file
 
 
 def Qian2020_Ovarian() -> AnnData:
+	'''Derived from :cite:`https://www.weizmann.ac.il/sites/3CA/ovarian`.
 	'''
-	Derived from :cite:`https://www.weizmann.ac.il/sites/3CA/ovarian`.
-	'''
+
 	resource = files('swiftcnv.datasets').joinpath('Qian2020_Ovarian.h5ad')
 	with as_file(resource) as filepath:
 		return sc.read_h5ad(filepath)
