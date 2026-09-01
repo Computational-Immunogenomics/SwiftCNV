@@ -4,7 +4,7 @@
 .. module:: swiftcnv
    :no-index:
 .. automodule:: swiftcnv
-   :no-index:
+   :members:
 .. autosummary::
    :toctree: generate
 
