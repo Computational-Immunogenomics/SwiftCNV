@@ -15,28 +15,26 @@ logger = logging.getLogger('SwiftCNV')
 
 
 class CNVHMM:
-	'''
-	A 3-state HMM for CNV segmentation (inferCNV i3 implementation)
+	'''A 3-state HMM for CNV segmentation (inferCNV i3 implementation)
 
 	States
 	------
 	0 : Loss
 	1 : Neutral (2 copies / diploid)
 	2 : Gain
+	
+	Parameters
+	----------
+	n_states : int
+	    Number of HMM states (default=3 for i3).
+	neutral_state : int
+	    Index of the neutral state (default=1 for i3).
+	transition_prob : float
+	    Probability of transitioning to each *other* state at each step.
 	'''
 
 	def __init__(self, n_states=3, neutral_state=1, transition_prob=1e-15,
 				 emission_means=None, emission_sds=None, gene_groups=None):
-		'''
-		Parameters
-		----------
-		n_states : int
-			Number of HMM states (default=3 for i3).
-		neutral_state : int
-			Index of the neutral state (default=1 for i3).
-		transition_prob : float
-			Probability of transitioning to each *other* state at each step.
-		'''
 		if n_states not in [3, 6]:
 			raise ValueError(f'Unsupported n_states "{n_states}", must be 3 or 6')
 		self.n_states = n_states
@@ -70,7 +68,8 @@ class CNVHMM:
 
 
 	def _log_emission(self, obs):
-		'''Return (T, n_states) log-emission probabilities.'''
+		'''Return (T, n_states) log-emission probabilities.
+		'''
 		T = len(obs)
 		log_e = np.zeros((T, self.n_states))
 		for s in range(self.n_states):
@@ -79,19 +78,19 @@ class CNVHMM:
 
 
 	def viterbi(self, obs):
-		'''
-		Run the Viterbi algorithm to find the most likely state sequence.
+		'''Run the Viterbi algorithm to find the most likely state sequence.
 
 		Parameters
 		----------
 		obs : np.ndarray, shape (T,)
-			Observed values (e.g. smoothed log2 ratios for one cell).
+		    Observed values (e.g. smoothed log2 ratios for one cell).
 
 		Returns
 		-------
 		np.ndarray, shape (T,)
-			Most likely state at each position.
+		    Most likely state at each position.
 		'''
+
 		T = len(obs)
 		log_e = self._log_emission(obs)
 		S = self.n_states
@@ -166,10 +165,10 @@ def _segment_worker(obj, mat, bounds):
 
 
 def filter_states_with_bgm(cnv_states, cnv_matrix, indices=None, neutral_state=1):
-	'''
-	Post-processes HMM states using a Bayesian Gaussian Mixture Model
+	'''Post-processes HMM states using a Bayesian Gaussian Mixture Model
 	to filter out false-positive low-confidence CNV blocks.
 	'''
+	
 	n_rows, n_genes = cnv_states.shape
 	out_states = cnv_states.copy()
 
@@ -217,22 +216,21 @@ def filter_states_with_bgm(cnv_states, cnv_matrix, indices=None, neutral_state=1
 ### Tumor Subclusters
 
 def get_subclusters(cnv_states, n_clusters=3, linkage='ward', groups=None, threads=1):
-	'''
-	Agglomerative Clustering from CNV score profiles
+	'''Agglomerative Clustering from CNV score profiles
 
 	Parameters
 	----------
 	cnv_states : np.ndarray
-		Cells x Genes matrix of CNV scores
-	n_clusters : int
-		Number of subclusters to identify (default=3)
-	linkage : str
-		Linkage for agglomerative clustering (default='ward')
+	    Cells x Genes matrix of CNV scores
+	n_clusters : int, default 3
+	    Number of subclusters to identify
+	linkage : str, default 'ward'
+	    Linkage for agglomerative clustering
 
 	Returns
 	-------
 	np.ndarray
-		subcluster labels
+	    subcluster labels
 	'''
 
 	if groups is None:
@@ -267,6 +265,33 @@ def _cluster_worker(mat, n_clusters, linkage):
 
 def run_hmm(x, cell_order=None, gene_order=None, output_dir=None, hmm_by='subcluster',
 			n_clusters=3, bgm_filter=False, groups=None, plot=True, threads=1):
+	'''Run the HMM pipeline from a CNV matrix.
+
+	Parameters
+	----------
+	x : :class:`SwiftCNV` or numpy.ndarray
+	    Input CNV object or matrix.
+	cell_order : numpy.ndarray, default None
+	    Order of cells to use for the analysis.
+	gene_order : numpy.ndarray, default None
+	    Order of genes to use for the analysis.
+	output_dir : str or pathlib.Path or None, default None
+	    Directory in which to save output files. If ``None``, outputs are
+	    not saved to disk.
+	hmm_by : {'subcluster', 'cell', 'sample'}, default 'subcluster'
+	    Grouping level used for HMM analysis.
+	n_clusters : int, default 3
+	    Number of clusters to identify.
+	bgm_filter : bool, default False
+	    Whether to apply Bayesian Gaussian mixture filtering.
+	groups : numpy.ndarray, default None
+	    Groups to use for the analysis.
+	plot : bool, default True
+	    Whether to generate plots.
+	threads : int, default 1
+	    Number of threads for multithreaded processing.
+	'''
+
 	if output_dir is not None:
 		os.makedirs(output_dir, exist_ok=True)
 	
