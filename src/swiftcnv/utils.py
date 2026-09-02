@@ -1052,7 +1052,7 @@ def plot_cnv_summary(adata, by, obsm_key='cnv_mat_arms', mode='mean',
 	
 
 def plot_cnv_from_adata(adata, obsm_key='cnv_mat', var_key='chr_arm', **kwargs):
-	'''Helper for calling plot_cnv() from an adata object.
+	'''Helper for calling :func:`plot_cnv` from an adata object.
 
 	Parameters
 	----------
@@ -1065,7 +1065,7 @@ def plot_cnv_from_adata(adata, obsm_key='cnv_mat', var_key='chr_arm', **kwargs):
 	    Set to None for preserving the columns of the original matrix.
 	**kwargs : str
 	    They can be columns of ``adata.obs`` to add as vertical bars on the left.
-	    Else, will be passed to plot_cnv() base function.
+	    Else, will be passed to :func:`plot_cnv` base function.
 	'''
 
 	mat = adata.obsm[obsm_key].values

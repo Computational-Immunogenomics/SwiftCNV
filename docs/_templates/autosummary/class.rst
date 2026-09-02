@@ -1,3 +1,6 @@
+swiftcnv.SwiftCNV
+=================
+
 .. currentmodule:: swiftcnv
 
 .. autoclass:: SwiftCNV
