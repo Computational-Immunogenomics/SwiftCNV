@@ -1,4 +1,4 @@
-# SwiftCNV <img src="docs/_static/images/swiftcnv_logo1.png" alt="swiftcnv_logo1" align="right" width="150">
+# SwiftCNV <img src="https://raw.githubusercontent.com/Computational-Immunogenomics/SwiftCNV/main/docs/_static/images/swiftcnv_logo1.png" alt="swiftcnv_logo" align="right" width="150">
 
 <!-- badges: start -->
 [![Documentation Status](https://readthedocs.org/projects/SwiftCNV/badge/?version=latest)](https://swiftcnv.readthedocs.io/en/latest/?badge=latest)
