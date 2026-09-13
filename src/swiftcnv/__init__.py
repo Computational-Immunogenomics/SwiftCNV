@@ -4,6 +4,7 @@ from .utils import get_cell_order, get_gene_order, read_gtf, load_chr_arms
 from .utils import add_mat_to_adata, load_output, summarise_by_obs, summarise_by_var
 from .utils import cnv_score, get_genes_chr_arm, get_cancer_type_correlation
 from .utils import plot_cnv, plot_cnv_multi, plot_cnv_summary, plot_cnv_from_adata
+from .classifier import MalignantClassifier, plot_CNV_density, plot_cnv_by_sample
 
 __all__ = [
 	'SwiftCNV',
@@ -26,5 +27,8 @@ __all__ = [
 	'plot_cnv',
 	'plot_cnv_multi',
 	'plot_cnv_summary',
-	'plot_cnv_from_adata'
+	'plot_cnv_from_adata',
+    'MalignantClassifier',
+	'plot_CNV_density',
+	'plot_cnv_by_sample'
 ]
