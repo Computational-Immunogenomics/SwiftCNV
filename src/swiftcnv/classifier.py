@@ -890,9 +890,9 @@ class MalignantClassifier:
                 logging.info(f"KNN completed for sample: {sample_id} using {k_val} neighbours.")
 
             else:
-                logging.warning(f"{sample_id} has less than 50 cells. KNN will not be computed and cells will be classified as their sample type.")
-                sample_type = self.adata.obs.loc[sample_mask, sample_type_key].astype(str).str.lower().unique()[0]
-                self.adata.obs.loc[sample_mask, 'knn_classif'] = sample_type
+                logging.warning(f"{sample_id} has less than 50 cells. KNN will not be computed and cells will be classified as their CNV state.")
+                CNV_state = self.adata.obs.loc[sample_mask, 'CNV_classif']
+                self.adata.obs.loc[sample_mask, 'knn_classif'] = CNV_state
 
         logging.info(">> KNN classification successfully ran")
 
