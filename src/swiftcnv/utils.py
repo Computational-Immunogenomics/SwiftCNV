@@ -1123,6 +1123,51 @@ def plot_cnv_by_sample(adata, cell_type_key='cell_type', group_key='sample', cnv
 	cmap="RdBu_r", score_cmap="Reds", sample_name=None, vmin=None, vmax=None, vcenter=0, threads=2,
 	save_pdf=None): 
 
+	'''Plot the classification results alongside the CNV heatmap for each sample with cell type annotations.
+
+    Parameters
+    ----------
+    adata : anndata.AnnData
+        Input AnnData object.
+    cell_type_key : str, default 'cell_type'
+        Key of the obs layer where cell annotations are stored.
+    group_key : str, default 'sample'
+        Key of the obs layer used to group and generate each individual heatmap.
+    cnv_key : str, default 'cnv_mat_arms'
+        Key of ``adata.obsm`` with the matrix to plot.
+    split_by : str, default 'malignant_classif'
+        Key of the obs layer used to divide each heatmap.
+    continuous_var : str, default 'malignant_score'
+        Key of the obs layer saving continuous scores that will be displayed as right colorbars in the heatmap.
+    highlight_arms : dict, default None
+        Dictionary with the sample names as keys and the hotspot chromosome arms to highlight as values.
+    cluster_cells : bool, default True
+        Whether to cluster cells or not.
+    figsize : tuple, default (20, 12)
+        Tuple defining the width and height of the matplotlib figure.
+    cmap : str or Colormap, default 'RdBu_r'
+        Colormap used for the main CNV heatmap.
+    score_cmap : str or Colormap, default 'Reds'
+        Colormap used to plot continuous variables.
+    sample_name : str or list, default None
+        Name of the sample(s) to plot. If None, all the samples will be displayed.
+    vmin : float, optional
+        Minimum data value that corresponds to the colormap's lower limit.
+    vmax : float, optional
+        Maximum data value that corresponds to the colormap's upper limit.
+    vcenter : float, default 0
+        The center value for the continuous colormap.
+    threads : int, default 2
+        Number of threads to use when clustering cells.
+    save_pdf : str, optional
+        Output filename to save the plot as a PDF.
+
+    Returns
+    -------
+    None
+        Returns None after displaying the plot or saving to ``save_pdf``.
+    '''
+
 
 	color_vars = ['malignant_score', cell_type_key, 'CNV_classif', 'knn_classif', 'malignant_classif']
 		
@@ -1479,7 +1524,7 @@ def plot_cnv_by_sample(adata, cell_type_key='cell_type', group_key='sample', cnv
 
 def plot_CNV_density(adata, sample_key, sample_name=None, show=True):
 	"""
-	Plots paired joint distribution metrics (continuous vs classification) per sample.
+	Plots malignancy scores distributions per sample.
 	
 	Parameters
 	----------
@@ -1495,6 +1540,7 @@ def plot_CNV_density(adata, sample_key, sample_name=None, show=True):
 	fig : matplotlib.figure.Figure
 		The generated figure object containing the plot layout.
 	"""
+
 	if sample_name is not None:
 		samples = [sample_name] if isinstance(sample_name, str) else list(sample_name)
 	else:
@@ -1628,6 +1674,38 @@ def plot_CNV_density(adata, sample_key, sample_name=None, show=True):
 def plot_alluvial(adata, cell_type_key='cell_type', col2='CNV_classif', col3='malignant_classif', 
 				color_dict=None, figsize=(12, 6), gap_ratio=0, category_fontsize=10, 
 				column_fontsize=9, ax=None):
+
+		'''Plot an alluvial diagram showing malignant classification of original cell type labels.
+
+		Parameters
+		----------
+		adata : anndata.AnnData
+			Input AnnData object.
+		cell_type_key : str, default 'cell_type'
+			Key of the obs layer used as the first column in the alluvial plot.
+		col2 : str, default 'CNV_classif'
+			Key of the obs layer used as the second column in the alluvial plot.
+		col3 : str, default 'malignant_classif'
+			Key of the obs layer used as the third column in the alluvial plot.
+		color_dict : dict, optional
+			Dictionary mapping category labels (typically from ``col3``) to color codes.
+			If None, a default classification color palette is used.
+		figsize : tuple, default (12, 6)
+			Tuple defining the width and height of the matplotlib figure.
+		gap_ratio : float, default 0
+			Ratio controlling the proportion of vertical spacing allocated between category boxes within columns.
+		category_fontsize : int, default 10
+			Font size for category text labels displayed inside the node boxes.
+		column_fontsize : int, default 9
+			Font size for the column header labels on the x-axis.
+		ax : matplotlib.axes.Axes, optional
+			Pre-existing Matplotlib Axes object to plot onto. If None, a new figure and axes are created.
+
+		Returns
+		-------
+		None
+			Returns None after rendering the plot or displaying it via ``plt.show()``.
+		'''
 
 		df = adata.obs[[cell_type_key, col2, col3]].astype(str).copy()
 		counts = df.groupby([cell_type_key, col2, col3]).size().reset_index(name='value')
