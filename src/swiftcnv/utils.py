@@ -11,16 +11,18 @@ import pandas as pd
 import anndata as ad
 from scipy.cluster.hierarchy import linkage, dendrogram, leaves_list
 from scipy.spatial.distance import pdist
-from scipy.stats import spearmanr
+from scipy.stats import spearmanr, gaussian_kde
 from sklearn.decomposition import PCA
 from joblib import Parallel, delayed
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
-from matplotlib.gridspec import GridSpec
-from matplotlib.patches import Patch
+from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
+import matplotlib.patches as patches
 from matplotlib.cm import ScalarMappable
 from matplotlib.backends.backend_pdf import PdfPages
+from matplotlib.path import Path as MplPath
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
+import seaborn as sns
 
 
 
@@ -38,25 +40,25 @@ def get_cell_order(df, counts, cell_names, column='reference', vals=None, sample
 	Parameters
 	----------
 	df : str or pandas.DataFrame
-	    Dataframe to get cellnames, reference status and sample values
+		Dataframe to get cellnames, reference status and sample values
 	counts : numpy.ndarray or scipy.sparse matrix
-	    Input matrix (cells x genes)
+		Input matrix (cells x genes)
 	cell_names : list-like
-	    Cell names of ``counts`` (rows).
+		Cell names of ``counts`` (rows).
 	column : str
-	    column from ``df`` to get reference status.
+		column from ``df`` to get reference status.
 	vals : str or list
-	    Value(s) of ``column`` to consider a cell to be reference. 
-	    Default treats ``column`` as boolean.
+		Value(s) of ``column`` to consider a cell to be reference. 
+		Default treats ``column`` as boolean.
 	sample_col : str
-	    If defined, will be added to column 'sample'
+		If defined, will be added to column 'sample'
 	sep : str
-	    Column separator to read ``df`` from file.
+		Column separator to read ``df`` from file.
 
 	Returns
 	-------
 	tuple[(numpy.ndarray|scipy.sparse matrix), pandas.DataFrame]
-	    Filtered count matrix and cell_order dataframe
+		Filtered count matrix and cell_order dataframe
 	'''
 
 	if isinstance(df, str):
@@ -95,18 +97,18 @@ def get_gene_order(counts, genes, annotations, **kwargs):
 	Parameters
 	----------
 	counts : numpy.ndarray or scipy.sparse matrix
-	    Input matrix (cells x genes)
+		Input matrix (cells x genes)
 	genes : list-like
-	    Order of genes in ``counts`` (columns).
+		Order of genes in ``counts`` (columns).
 	annotations : str or pandas.DataFrame
-	    Path to GTF or dataframe with gene annotations.
-	    If a path, it will be opened with `read_gtf`.
+		Path to GTF or dataframe with gene annotations.
+		If a path, it will be opened with `read_gtf`.
 	**kwargs : additional kwargs are passed to `read_gtf`.
 
 	Returns
 	-------
 	tuple[(numpy.ndarray|scipy.sparse matrix), pandas.DataFrame]
-	    Filtered count matrix and gene_order dataframe
+		Filtered count matrix and gene_order dataframe
 	'''
 
 	if isinstance(annotations, str):
@@ -126,20 +128,20 @@ def read_gtf(gtf_path, arms_path=None, sex_chr=False, exclude_immune=False):
 	Parameters
 	----------
 	gtf_path : str
-	    Path to gtf gene annotation file.
+		Path to gtf gene annotation file.
 	arms_path : str or pandas.DataFrame
-	    path to TSV file to read or dataframe. 
-	    Default is swiftcnv's built-in chr_arms.tsv file (human) 
-	    Mandatory columns : ['chr', 'arm', 'start', 'end']
+		path to TSV file to read or dataframe. 
+		Default is swiftcnv's built-in chr_arms.tsv file (human) 
+		Mandatory columns : ['chr', 'arm', 'start', 'end']
 	sex_chr : bool, default False
-	    Keep genes from chromosomes X and Y
+		Keep genes from chromosomes X and Y
 	exclude_immune : bool, default False
-	    Exclude genes that start with ``(HLA-|IGH|IGK|IGL)``
+		Exclude genes that start with ``(HLA-|IGH|IGK|IGL)``
 
 	Returns
 	-------
 	pandas.DataFrame
-	    Dataframe with columns ['gene', 'chr', 'arm', 'chr_arm', 'start', 'end']
+		Dataframe with columns ['gene', 'chr', 'arm', 'chr_arm', 'start', 'end']
 	'''
 
 	genes = set()
@@ -197,14 +199,14 @@ def load_chr_arms(arms_path=None):
 	Parameters
 	----------
 	arms_path : str
-	    Path to TSV file to read. 
-	    default is swiftcnv's built-in chr_arms.tsv file (human: hg38) 
-	    Mandatory columns: ['chr', 'arm', 'start', 'end']
+		Path to TSV file to read. 
+		default is swiftcnv's built-in chr_arms.tsv file (human: hg38) 
+		Mandatory columns: ['chr', 'arm', 'start', 'end']
 	
 	Returns
 	-------
 	pandas.DataFrame
-	    Dataframe with columns ['chr', 'arm', 'start_arm', 'end_arm']
+		Dataframe with columns ['chr', 'arm', 'start_arm', 'end_arm']
 	'''
 
 	cols = ['chr', 'arm', 'start', 'end']
@@ -238,11 +240,40 @@ def chr_sort_key(region):
 	return (1, order.get(c.upper(), 99), arm)
 
 
+def sort_chrom_arms(arms):
+	"""
+	Helper function to sort chromosome arms numerically (1-22, X, Y)
+	and then by arm (p before q).
+	"""
+	def parse_arm(arm):
+		# Match the numeric/letter part and the 'p' or 'q' part
+		match = re.match(r'^([0-9]+|[XYxy])([pq]?)$', str(arm))
+		if not match:
+			return (999, arm) # Fallback for unexpected formats
+		
+		chrom, arm_type = match.groups()
+		
+		# Map chromosomes to integers for proper sorting
+		if chrom.upper() == 'X':
+			chrom_val = 23
+		elif chrom.upper() == 'Y':
+			chrom_val = 24
+		else:
+			chrom_val = int(chrom)
+			
+		# Ensure 'p' comes before 'q'
+		arm_val = 0 if arm_type == 'p' else 1 if arm_type == 'q' else 2
+		
+		return (chrom_val, arm_val)
+		
+	return sorted(arms, key=parse_arm)
+
+
 
 ### Downstream Helper Functions
 
 def add_mat_to_adata(adata, matrix, cell_order, gene_order, cnv_key='cnv_mat',
-					 reference_key='reference', inplace=False):
+					reference_key='reference', inplace=False):
 	'''Add the SwiftCNV output matrix to an anndata.AnnData object
 	along with matrix indices (cell_order and gene_order). cell_order and
 	gene_order must be pandas.DataFrames, and their indices will be ignored.
@@ -250,24 +281,24 @@ def add_mat_to_adata(adata, matrix, cell_order, gene_order, cnv_key='cnv_mat',
 	Parameters
 	----------
 	adata : anndata.AnnData
-	    Object to add the matrix to.
+		Object to add the matrix to.
 	matrix : numpy.ndarray
-	    CNV matrix, output of :meth:`~swiftcnv.SwiftCNV.run`.
+		CNV matrix, output of :meth:`~swiftcnv.SwiftCNV.run`.
 	cell_order : pandas.DataFrame
-	    DataFrame with cell index information.
+		DataFrame with cell index information.
 	gene_order : pandas.DataFrame
-	    DataFrame with gene column information.
+		DataFrame with gene column information.
 	cnv_key : str, default 'cnv_mat'
-	    Key for storing the CNV matrix in adata.obsm.
+		Key for storing the CNV matrix in adata.obsm.
 	reference_key : str, default 'reference'
-	    Key for storing reference status in adata.obs.
+		Key for storing reference status in adata.obs.
 	inplace : bool, default False
-	    Whether to modify ``adata`` in-place or return a copy.
+		Whether to modify ``adata`` in-place or return a copy.
 
 	Returns
 	-------
 	anndata.AnnData or None
-	    An updated copy of ``adata`` if ``inplace=False``, otherwise ``None``.
+		An updated copy of ``adata`` if ``inplace=False``, otherwise ``None``.
 	'''
 
 	nrow, ncol = matrix.shape
@@ -277,7 +308,7 @@ def add_mat_to_adata(adata, matrix, cell_order, gene_order, cnv_key='cnv_mat',
 		cnv_df = pd.DataFrame(matrix.T, index=cell_order['cell_name'], columns=gene_order['gene'])
 	else:
 		raise ValueError(f'Matrix dimensions {matrix.shape} do not match the number'
-						 f' of genes {len(gene_order)} and cells {len(cell_order)}.')
+						f' of genes {len(gene_order)} and cells {len(cell_order)}.')
 
 	common_cells = adata.obs_names.intersection(cnv_df.index)
 	if len(common_cells) < len(adata.obs_names):
@@ -306,19 +337,19 @@ def load_output(output_dir, adata=None, **kwargs):
 	Parameters
 	----------
 	output_dir: str
-	    Path to the SwiftCNV output files containing the matrix, genes and annotations.
+		Path to the SwiftCNV output files containing the matrix, genes and annotations.
 	adata: anndata.AnnData
-	    If defined, the outputs will be added to the AnnData object via :func:`add_mat_to_adata`.
+		If defined, the outputs will be added to the AnnData object via :func:`add_mat_to_adata`.
 	**kwargs: Additional kwargs are passed to :func:`add_mat_to_adata`.
 
 	Returns
 	-------
 	tuple[numpy.ndarray, pandas.DataFrame, pandas.DataFrame] or anndata.AnnData or None
-	    * If ``adata`` is None, returns a tuple of (cnv_matrix, cell_order and gene_order),
-		  where ``cnv_matrix`` is a ``numpy.ndarray`` and ``cell_order`` and ``gene_order``
-		  are ``pandas.DataFrame``.
+		* If ``adata`` is None, returns a tuple of (cnv_matrix, cell_order and gene_order),
+		where ``cnv_matrix`` is a ``numpy.ndarray`` and ``cell_order`` and ``gene_order``
+		are ``pandas.DataFrame``.
 		* If ``adata`` is defined and ``inplace=True``, returns the updated copy of
-		  ``adata``. If ``inplace=False``, updates ``adata`` returns None.
+		``adata``. If ``inplace=False``, updates ``adata`` returns None.
 	'''
 
 	matrix_path = os.path.join(output_dir, 'cnv_scores.npz')
@@ -342,22 +373,22 @@ def summarise_by_obs(adata, obsm_key='cnv_mat', by='sample', mode='mean'):
 	Parameters
 	----------
 	adata : anndata.AnnData
-	    Input AnnData object.
+		Input AnnData object.
 	obsm_key : str, default 'cnv_mat'
-	    Key of the obsm layer to summarise.
+		Key of the obsm layer to summarise.
 	by : str, default 'sample'
-	    Key of the obs layer to group columns by.
+		Key of the obs layer to group columns by.
 	mode : {'mean', 'median'}, default 'mean'
-	    Summarise method to use ('mean' or 'median').
+		Summarise method to use ('mean' or 'median').
 
 	Returns
 	-------
 	pandas.DataFrame
-	    Summarised matrix indexed by the grouped `by` attribute.
+		Summarised matrix indexed by the grouped `by` attribute.
 	'''
 
 	if obsm_key not in adata.obsm:
-	    raise ValueError(f'obsm key "{obsm_key}" not found in AnnData object.')
+		raise ValueError(f'obsm key "{obsm_key}" not found in AnnData object.')
 
 	mat = adata.obsm[obsm_key].groupby(adata.obs[by], sort=False)
 	if mode == 'mean':
@@ -371,29 +402,29 @@ def summarise_by_obs(adata, obsm_key='cnv_mat', by='sample', mode='mean'):
 
 
 def summarise_by_var(adata, obsm_key='cnv_mat', by='chr_arm',
-					 key_added='cnv_mat_arm', mode='mean', inplace=False):
+					key_added='cnv_mat_arm', mode='mean', inplace=False):
 	'''Summarise the values of the specified obsm matrix by gene attributes
 	(arm by default). Output goes to obsm layer with key ``key_added``.
 
 	Parameters
 	----------
 	adata : anndata.AnnData
-	    Input AnnData object.
+		Input AnnData object.
 	obsm_key : str, default 'cnv_mat'
-	    Key of the obsm layer to summarise.
+		Key of the obsm layer to summarise.
 	by : str, default 'chr_arm'
-	    Key of the var layer to group columns by.
+		Key of the var layer to group columns by.
 	key_added : str, default 'cnv_mat_arm'
-	    Key of the obsm layer to add the result.
+		Key of the obsm layer to add the result.
 	mode : {'mean', 'median'}, default 'mean'
-	    Summarise method to use ('mean' or 'median').
+		Summarise method to use ('mean' or 'median').
 	inplace : bool
-	    Edit ``adata`` instead of returning a copy.
+		Edit ``adata`` instead of returning a copy.
 
 	Returns
 	-------
 	pandas.DataFrame
-	    Summarised matrix (if inplace=False)
+		Summarised matrix (if inplace=False)
 	'''
 
 	if obsm_key not in adata.obsm:
@@ -420,7 +451,7 @@ def cnv_score(adata, obsm_key='cnv_mat_arms', key_added='cnv_score', inplace=Fal
 
 	.. math::
 
-	    S_i = \frac{1}{M} \sum_{j=1}^{M} x_{ij}^2
+		S_i = \frac{1}{M} \sum_{j=1}^{M} x_{ij}^2
 
 	Where:
 
@@ -431,19 +462,19 @@ def cnv_score(adata, obsm_key='cnv_mat_arms', key_added='cnv_score', inplace=Fal
 	Parameters
 	----------
 	adata : anndata.AnnData
-	    Input AnnData object.
+		Input AnnData object.
 	obsm_key : str, default 'cnv_mat_arms'
-	    Key of the obsm layer to summarise.
+		Key of the obsm layer to summarise.
 	key_added : str, default 'cnv_score'
-	    `adata.obs` key under which to add the CNV scores.
+		`adata.obs` key under which to add the CNV scores.
 	inplace : bool, default False
-	    Whether to place calculated metrics in `.obs` or return them.
+		Whether to place calculated metrics in `.obs` or return them.
 
 	Returns
 	-------
 	numpy.ndarray or anndata.AnnData
-	    If `inplace=False`, returns a 1D numpy array with calculated CNV scores.
-	    If `inplace=True`, updates `adata.obs[key_added]`
+		If `inplace=False`, returns a 1D numpy array with calculated CNV scores.
+		If `inplace=True`, updates `adata.obs[key_added]`
 	'''
 
 	if obsm_key in adata.obsm:
@@ -466,16 +497,16 @@ def get_genes_chr_arm(adata, obsm_key='cnv_mat', chr_arms=None):
 	Parameters
 	----------
 	adata : anndata.AnnData
-	    Input AnnData object.
+		Input AnnData object.
 	obsm_key : str, default: 'cnv_mat'
-	    The key of the obsm layer to summarise.
+		The key of the obsm layer to summarise.
 	chr_arms : str or list
-	    Chromosome arm(s) to filter by.
+		Chromosome arm(s) to filter by.
 
 	Returns
 	-------
 	pandas.DataFrame
-	    Dataframe with all the genes corresponding to the specified chromosome arm.
+		Dataframe with all the genes corresponding to the specified chromosome arm.
 	'''
 
 	if isinstance(chr_arms, str):
@@ -569,18 +600,18 @@ def get_clusters(mat, groups=None, threads=1):
 	Parameters
 	----------
 	mat : numpy.ndarray
-	    Cells x features matrix
+		Cells x features matrix
 	groups : numpy.ndarray or None
-	    Group label per cell matching mat order
+		Group label per cell matching mat order
 	threads: int
-	    Submit n parallel jobs for clustering different groups
+		Submit n parallel jobs for clustering different groups
 
 	Returns
 	-------
 	cell_order: list
-	    Order of clustered indices
+		Order of clustered indices
 	Z : numpy.ndarray or None
-	    Linkage matrix
+		Linkage matrix
 	'''
 
 	if mat.shape[0] < 2:
@@ -648,8 +679,8 @@ def merge_clusters(Zs, sizes, root_height=1.2):
 
 
 def plot_cnv(mat, ref_cells, regions, output_file=None, figsize=(20, 12),
-			 cmap='RdBu_r', cluster_cells=True, add_dendrogram=True, group_cells=True,
-			 vmin=None, vmax=None, vcenter=0, header=True, threads=1, **kwargs):
+			cmap='RdBu_r', cluster_cells=True, add_dendrogram=True, group_cells=True,
+			vmin=None, vmax=None, vcenter=0, header=True, threads=1, **kwargs):
 	'''Plot the SwiftCNV heatmap with chromosome/arm annotations and separate
 	reference/observation panels.
 
@@ -662,44 +693,44 @@ def plot_cnv(mat, ref_cells, regions, output_file=None, figsize=(20, 12),
 	Parameters
 	----------
 	mat : numpy.ndarray
-	    Input matrix to plot.
+		Input matrix to plot.
 	ref_cells : numpy.ndarray of bool
-	    Boolean array indicating reference cell status.
+		Boolean array indicating reference cell status.
 	regions : numpy.ndarray of str
-	    Array of gene region annotations (chromosomes, arms, etc.).
+		Array of gene region annotations (chromosomes, arms, etc.).
 	output_file : str, optional
-	    Path to save the output file. If None, the Matplotlib figure is returned.
+		Path to save the output file. If None, the Matplotlib figure is returned.
 	figsize : tuple of int, default (10, 8)
-	    Figure size as (width, height).
+		Figure size as (width, height).
 	cmap : str, default 'RdBu_r'
-	    Colormap to use in the heatmap.
+		Colormap to use in the heatmap.
 	cluster_cells : bool, default True
-	    Whether to use hierarchical clustering to order the cells.
+		Whether to use hierarchical clustering to order the cells.
 	add_dendrogram : bool, default False
-	    Whether to add a clustering dendrogram to the left of the plot.
+		Whether to add a clustering dendrogram to the left of the plot.
 	group_cells : bool, default True
-	    Whether to group cells by the first array passed in ``**kwargs``.
+		Whether to group cells by the first array passed in ``**kwargs``.
 	vmin : float, optional
-	    Minimum value for the colormap scale. Calculated automatically by default.
+		Minimum value for the colormap scale. Calculated automatically by default.
 	vmax : float, optional
-	    Maximum value for the colormap scale. Calculated automatically by default.
+		Maximum value for the colormap scale. Calculated automatically by default.
 	vcenter : float, default 0.0
-	    Center value for the colormap scale.
+		Center value for the colormap scale.
 	header : bool, default True
-	    Whether to add a header displaying cell and gene counts.
+		Whether to add a header displaying cell and gene counts.
 	threads : int, default 1
-	    Number of threads to use for hierarchical clustering.
+		Number of threads to use for hierarchical clustering.
 	**kwargs : numpy.ndarray
-	    Named cell metadata arrays matching the cell dimension (e.g., sample,
-	    cell_type, subcluster). Each array adds a vertical color bar to the left of
-	    the plot. If ``group_cells=True``, the first keyword argument stratifies
-	    the cell clustering.
+		Named cell metadata arrays matching the cell dimension (e.g., sample,
+		cell_type, subcluster). Each array adds a vertical color bar to the left of
+		the plot. If ``group_cells=True``, the first keyword argument stratifies
+		the cell clustering.
 
 	Returns
 	-------
 	matplotlib.figure.Figure or None
-	    Returns the Matplotlib Figure object for further processing if
-	    ``output_file`` is None, otherwise returns None after saving to file.
+		Returns the Matplotlib Figure object for further processing if
+		``output_file`` is None, otherwise returns None after saving to file.
 	'''
 
 	# Separate ref and obs
@@ -755,7 +786,7 @@ def plot_cnv(mat, ref_cells, regions, output_file=None, figsize=(20, 12),
 	widths = [8] * add_dend + [1] * len(kwargs) + [80, 1, 1]
 	heights = [n_ref, n_obs, max(0.03 * (n_ref + n_obs), 0.3 / figsize[1] * (n_ref + n_obs))]
 	gs = GridSpec(3, len(widths), hspace=0.02, wspace=0.02,
-				  width_ratios=widths, height_ratios=heights)
+				width_ratios=widths, height_ratios=heights)
 
 	if add_dend:
 		ax_refdend = fig.add_subplot(gs[0, 0])
@@ -858,10 +889,10 @@ def plot_cnv(mat, ref_cells, regions, output_file=None, figsize=(20, 12),
 			else:
 				ax_obsbars[j].axis('off')
 
-			handles = [Patch(color=val_to_color[v], label=str(v)) for v in unique_vals]
+			handles = [patches.Patch(color=val_to_color[v], label=str(v)) for v in unique_vals]
 
 		ax_legbars[j].text(0.5, 1.0, bar_label, transform=ax_legbars[j].transAxes, rotation=90,
-						   va='top', ha='center', fontsize=10, clip_on=False)
+						va='top', ha='center', fontsize=10, clip_on=False)
 
 		if continuous or len(unique_vals) <= 30:
 			if first and group_cells and not continuous:
@@ -878,9 +909,9 @@ def plot_cnv(mat, ref_cells, regions, output_file=None, figsize=(20, 12),
 							ax_obs.axhline(i - 0.5, color='black', linewidth=0.8, alpha=0.7, zorder=5)
 							prev_val = obs_vals[i]
 				ax_chr.legend(handles=handles, title=bar_label, loc='upper center',
-							  bbox_to_anchor=(0.5, -0.08), ncol=min(len(handles), 10),
-							  fontsize=9, title_fontsize=10, frameon=False,  
-							  handlelength=1.2, handleheight=1.2, columnspacing=1.2)
+							bbox_to_anchor=(0.5, -0.08), ncol=min(len(handles), 10),
+							fontsize=9, title_fontsize=10, frameon=False,  
+							handlelength=1.2, handleheight=1.2, columnspacing=1.2)
 			elif (leg_y - len(handles) * 0.3 / figsize[1]) >= 0:
 				if continuous:
 					cbar = plt.colorbar(sm, cax=ax_leg.inset_axes([0.6, leg_y - 0.23, 1, 0.2]))
@@ -957,23 +988,23 @@ def plot_cnv_multi(mat, ref_cells, regions, groups, output_file, **kwargs):
 	Parameters
 	----------
 	mat : numpy.ndarray
-	    Input CNV matrix to plot.
+		Input CNV matrix to plot.
 	ref_cells : numpy.ndarray of bool
-	    Boolean array indicating reference cell status.
+		Boolean array indicating reference cell status.
 	regions : numpy.ndarray of str
-	    Array of gene region annotations (e.g., chromosomes or arms).
+		Array of gene region annotations (e.g., chromosomes or arms).
 	groups : numpy.ndarray
-	    Array of group labels (e.g., sample or cell type) used to split the plot into
-	    separate PDF pages.
+		Array of group labels (e.g., sample or cell type) used to split the plot into
+		separate PDF pages.
 	output_file : str
-	    Path to the output PDF file.
+		Path to the output PDF file.
 	**kwargs
-	    Additional keyword arguments passed to :func:`plot_cnv`.
+		Additional keyword arguments passed to :func:`plot_cnv`.
 
 	Returns
 	-------
 	None
-	    Saves a multi-page PDF document to ``output_file`` with one heatmap page per group.
+		Saves a multi-page PDF document to ``output_file`` with one heatmap page per group.
 	'''
 
 	if not output_file.endswith('.pdf'):
@@ -996,34 +1027,34 @@ def plot_cnv_multi(mat, ref_cells, regions, groups, output_file, **kwargs):
 			idx = groups == group
 			g_kwargs = {k: v if (k in args or v is None) else v[idx] for k, v in kwargs.items()}
 			fig = plot_cnv(mat[idx], ref_cells[idx], regions, vcenter=vcenter,
-						   vmin=vmin, vmax=vmax, **g_kwargs)
+						vmin=vmin, vmax=vmax, **g_kwargs)
 			fig.suptitle(str(group), fontsize=16, fontweight='bold', y=0.95)
 			pdf.savefig(fig)
 			plt.close(fig)
 
 
 def plot_cnv_summary(adata, by, obsm_key='cnv_mat_arms', mode='mean',
-					 output_file=None, **kwargs):
+					output_file=None, **kwargs):
 	'''Plot a matrix with cells (rows) summarised by ``by`` groups
 	using mean or median (``mode``). **kwargs are passed to :func:`plot_cnv`.
 
 	Parameters
 	----------
 	adata : anndata.AnnData
-	    Input AnnData object.
+		Input AnnData object.
 	by : str
-	    Key of the obs layer to group cells.
+		Key of the obs layer to group cells.
 	obsm_key : str, default 'cnv_mat_arms'
-	    Key of the obsm layer to summarise.
+		Key of the obsm layer to summarise.
 	mode : {'mean', 'median'}, default 'mean'
-	    Summarise method to use ('mean' or 'median'). 
+		Summarise method to use ('mean' or 'median'). 
 	output_file : str, optional
-	    output filename to save the plot
+		output filename to save the plot
 
 	Returns
 	-------
 	None
-	    returns None after showing or saving to ``output_file``.
+		returns None after showing or saving to ``output_file``.
 	'''
 
 	mat = summarise_by_obs(adata, obsm_key=obsm_key, by=by, mode=mode)
@@ -1034,7 +1065,7 @@ def plot_cnv_summary(adata, by, obsm_key='cnv_mat_arms', mode='mean',
 
 	dummy_ref = np.full(mat.shape[0], False, dtype=bool)
 	fig = plot_cnv(mat.values, ref_cells=dummy_ref, cluster_cells=False, header=False,
-				   regions=regions, **{by.capitalize(): mat.index.values}, **kwargs)
+				regions=regions, **{by.capitalize(): mat.index.values}, **kwargs)
 
 	ncols = fig.axes[0].get_subplotspec().get_gridspec().ncols
 	for ax in fig.axes:
@@ -1057,15 +1088,15 @@ def plot_cnv_from_adata(adata, obsm_key='cnv_mat', var_key='chr_arm', **kwargs):
 	Parameters
 	----------
 	adata : anndata.AnnData
-	    Input AnnData object with all values to plot.
+		Input AnnData object with all values to plot.
 	obsm_key : str, default 'cnv_mat'
-	    Key of ``adata.obsm`` with matrix to plot.
+		Key of ``adata.obsm`` with matrix to plot.
 	var_key : str or None, default 'chr_arm'
-	    Key of ``adata.var`` to group genes if columns are genes.
-	    Set to None for preserving the columns of the original matrix.
+		Key of ``adata.var`` to group genes if columns are genes.
+		Set to None for preserving the columns of the original matrix.
 	**kwargs : str
-	    They can be columns of ``adata.obs`` to add as vertical bars on the left.
-	    Else, will be passed to :func:`plot_cnv` base function.
+		They can be columns of ``adata.obs`` to add as vertical bars on the left.
+		Else, will be passed to :func:`plot_cnv` base function.
 	'''
 
 	mat = adata.obsm[obsm_key].values
@@ -1086,673 +1117,682 @@ def plot_cnv_from_adata(adata, obsm_key='cnv_mat', var_key='chr_arm', **kwargs):
 	plot_cnv(mat, ref_cells, regions, **kwargs)
 
 
-def plot_cnv_by_sample(adata, group_key='sample', cnv_key="cnv_mat_arms", 
-    color_by=None, split_by="malignant_classif", continuous_var="malignant_score",
-    legend_titles=None, highlight_arms=None, cluster_cells=True, figsize=(20, 12), 
-    cmap="RdBu_r", score_cmap="Reds", vmin=None, vmax=None, vcenter=0, threads=-1,
-    save_pdf=None): 
+def plot_cnv_by_sample(adata, cell_type_key='cell_type', group_key='sample', cnv_key="cnv_mat_arms", 
+	split_by="malignant_classif", continuous_var="malignant_score",
+	highlight_arms=None, cluster_cells=True, figsize=(20, 12), 
+	cmap="RdBu_r", score_cmap="Reds", sample_name=None, vmin=None, vmax=None, vcenter=0, threads=2,
+	save_pdf=None): 
 
-    logging.info(">> Plotting a CNV Heatmap by Sample...")
 
-    if isinstance(color_by, str):
-        color_vars = [color_by]
-    elif isinstance(color_by, (list, tuple)):
-        color_vars = list(color_by)
-    else:
-        color_vars = []
-        
-    if legend_titles is None:
-        legend_titles = {}
-        
-    if highlight_arms is None:
-        highlight_arms = {}
+	color_vars = ['malignant_score', cell_type_key, 'CNV_classif', 'knn_classif', 'malignant_classif']
+		
+	legend_titles = {cell_type_key: 'Cell type', 'knn_classif': 'KNN classif.', 'CNV_classif': 'CNV classif.', 'CNV_values': 'CNV values', 'malignant_score': 'Malignant score', 'malignant_classif': 'Malignant classif.' }
 
-    # Prevent continuous variables from being treated as categorical
-    if continuous_var in color_vars:
-        color_vars.remove(continuous_var)
+	if highlight_arms is None:
+		highlight_arms = {}
 
-    unique_samples = adata.obs[group_key].unique()
-    
-    # Custom color mappings for categorical variables
-    my_colors = {
-        'Malignant-high confidence': '#cd5555',
-        'Malignant-like': '#ee9572',
-        'Normal': '#b2dfee',
-        'Unknown': '#b3b3b3'
-    }
-    knn_colors = {'Normal': '#b2dfee', 'Malignant': '#cd5555'}
-    
-    # Initialize PDF object if saving
-    pdf = PdfPages(save_pdf) if save_pdf else None 
-    
-    for sample in unique_samples:
-        
-        # Subset the main anndata object
-        sample_adata = adata[adata.obs[group_key] == sample].copy()
-        
-        if cnv_key in sample_adata.obsm:
-            nested_cnv = sample_adata.obsm[cnv_key]
-            if isinstance(nested_cnv, pd.DataFrame):
-                sample_adata.obsm[cnv_key] = nested_cnv.loc[sample_adata.obs_names].copy()
-            else:
-                sample_adata.obsm[cnv_key] = nested_cnv[sample_adata.obs_names].copy()
-        else:
-            raise KeyError(f"'{cnv_key}' not found in adata.obsm for sample '{sample}'.")
- 
-        # Extract matrix & chromosome metadata
-        cnv_adata = sample_adata.obsm[cnv_key]
-        mat = cnv_adata.values
-        if sp.issparse(mat):
-            mat = mat.toarray()
+	# Prevent continuous variables from being treated as categorical
+	if continuous_var in color_vars:
+		color_vars.remove(continuous_var)
 
-        chromosomes = sort_chrom_arms(cnv_adata.columns)
-        n_total_cells = len(sample_adata)
+	if sample_name is not None:
+		samples = [sample_name] if isinstance(sample_name, str) else list(sample_name)
+	else:
+		samples = adata.obs[group_key].unique()
+	
+	# Custom color mappings for categorical variables
+	my_colors = {
+		'Malignant-high confidence': '#cd5555',
+		'Malignant-like': '#ee9572',
+		'Normal': '#b2dfee',
+		'Unknown': '#b3b3b3'
+	}
+	knn_colors = {'Normal': '#b2dfee', 'Malignant': '#cd5555'}
+		
+	# Initialize PDF object if saving
+	pdf = PdfPages(save_pdf) if save_pdf else None 
+	
+	for sample in samples:
+		
+		# Subset the main anndata object
+		sample_adata = adata[adata.obs[group_key] == sample].copy()
+		
+		if cnv_key in sample_adata.obsm:
+			nested_cnv = sample_adata.obsm[cnv_key]
+			if isinstance(nested_cnv, pd.DataFrame):
+				sample_adata.obsm[cnv_key] = nested_cnv.loc[sample_adata.obs_names].copy()
+			else:
+				sample_adata.obsm[cnv_key] = nested_cnv[sample_adata.obs_names].copy()
+		else:
+			raise KeyError(f"'{cnv_key}' not found in adata.obsm for sample '{sample}'.")
 
-        # Get highlighted arms for this specific sample
-        sample_marked_arms = highlight_arms.get(sample, [])
+		# Extract matrix & chromosome metadata
+		cnv_adata = sample_adata.obsm[cnv_key]
+		mat = cnv_adata.values
 
-        # Continuous variable setup (CUSTOM HALF-WHITE / HALF-REDS COLORMAP)
-        has_continuous = (continuous_var is not None) and (continuous_var in sample_adata.obs.columns)
-        if has_continuous:
-            score_vals_all = sample_adata.obs[continuous_var].values.astype(float)
-            score_vmin = 0.0
-            score_vmax = max(1.0, np.nanmax(score_vals_all))
-            
-            score_norm = mcolors.Normalize(vmin=score_vmin, vmax=score_vmax)
-            
-            base_cm = plt.colormaps[score_cmap] if isinstance(score_cmap, str) else score_cmap
-            n_samples = 256
-            half_n = n_samples // 2
-            
-            white_part = np.tile(np.array([1.0, 1.0, 1.0, 1.0]), (half_n, 1))
-            reds_part = base_cm(np.linspace(0.0, 1.0, n_samples - half_n))
-            
-            score_cm = mcolors.ListedColormap(np.vstack((white_part, reds_part)), name="WhiteToReds")
+		chromosomes = sort_chrom_arms(cnv_adata.columns)
+		n_total_cells = len(sample_adata)
 
-        # Group and Cluster all cells based on split_by
-        cell_groups = {}
-        if split_by and split_by in sample_adata.obs.columns:
-            raw_vals = sample_adata.obs[split_by].values
-            present_vals = [v for v in pd.unique(raw_vals) if pd.notna(v)]
-            
-            if split_by in ['CNV_classif', 'malignant_classif']:
-                desired_order = ['Normal', 'Malignant-high confidence', 'Malignant-like', 'Unknown']
-                unique_splits = [k for k in desired_order if k in present_vals]
-                unique_splits += [v for v in present_vals if v not in unique_splits]
-            elif split_by == 'knn_classif':
-                unique_splits = [k for k in knn_colors.keys() if k in present_vals]
-                unique_splits += [v for v in present_vals if v not in unique_splits]
-            else:
-                unique_splits = sorted(present_vals)
-            
-            for val in unique_splits:
-                group_mask = raw_vals == val
-                group_idx = np.where(group_mask)[0]
-                if len(group_idx) == 0:
-                    continue
-                group_mat = mat[group_idx, :]
-                
-                if cluster_cells and len(group_idx) > 1:
-                    order, _ = get_clusters(group_mat, threads=threads)
-                else:
-                    order = np.arange(len(group_idx))
-                    
-                cell_groups[val] = {
-                    'mat': group_mat[order, :],
-                    'rows': group_idx[order]
-                }
-        else:
-            all_idx = np.arange(n_total_cells)
-            if cluster_cells and len(all_idx) > 1:
-                order, _ = get_clusters(mat, threads=threads)
-            else:
-                order = all_idx
-            cell_groups['All Cells'] = {
-                'mat': mat[order, :],
-                'rows': all_idx[order]
-            }
+		# Get highlighted arms for this specific sample
+		sample_marked_arms = highlight_arms.get(sample, [])
 
-        # Global Color Palette Setup
-        palettes = ["Set3", "tab20", 'Paired'] 
-        all_legends_data = []
-        global_group_colors = {}
+		# Continuous variable setup (CUSTOM HALF-WHITE / HALF-REDS COLORMAP)
+		has_continuous = (continuous_var is not None) and (continuous_var in sample_adata.obs.columns)
+		if has_continuous:
+			score_vals_all = sample_adata.obs[continuous_var].values.astype(float)
+			score_vmin = 0.0
+			score_vmax = max(1.0, np.nanmax(score_vals_all))
+			
+			score_norm = mcolors.Normalize(vmin=score_vmin, vmax=score_vmax)
+			
+			base_cm = plt.colormaps[score_cmap] if isinstance(score_cmap, str) else score_cmap
+			n_samples = 256
+			half_n = n_samples // 2
+			
+			white_part = np.tile(np.array([1.0, 1.0, 1.0, 1.0]), (half_n, 1))
+			reds_part = base_cm(np.linspace(0.0, 1.0, n_samples - half_n))
+			
+			score_cm = mcolors.ListedColormap(np.vstack((white_part, reds_part)), name="WhiteToReds")
 
-        if color_vars:
-            for idx, var in enumerate(color_vars):
-                if var not in sample_adata.obs.columns:
-                    continue # Skip missing columns defensively
-                    
-                unique_vals = sorted([v for v in pd.unique(sample_adata.obs[var]) if pd.notna(v)])
-                has_nan = sample_adata.obs[var].isna().any()
-                
-                if var in ['CNV_classif', 'malignant_classif']:
-                    group_to_color = {g: mcolors.to_rgba(my_colors.get(g, '#CCCCCC')) for g in unique_vals}
-                elif var == 'knn_classif':
-                    group_to_color = {g: mcolors.to_rgba(knn_colors.get(g, '#CCCCCC')) for g in unique_vals}
-                else:
-                    cat_cmap = plt.colormaps[palettes[idx % len(palettes)]]
-                    group_to_color = {g: cat_cmap(i % len(cat_cmap.colors)) for i, g in enumerate(unique_vals)}
-                
-                if has_nan:
-                    group_to_color['nan'] = mcolors.to_rgba('#D3D3D3')
-                    if 'nan' not in unique_vals:
-                        unique_vals.append('nan')
-                
-                global_group_colors[var] = group_to_color
-                handles = [patches.Patch(color=group_to_color[g], label=str(g)) for g in unique_vals]
-                
-                display_title = legend_titles.get(var, var)
-                all_legends_data.append((handles, display_title))
+		# Group and Cluster all cells based on split_by
+		cell_groups = {}
+		if split_by and split_by in sample_adata.obs.columns:
+			raw_vals = sample_adata.obs[split_by].values
+			present_vals = [v for v in pd.unique(raw_vals) if pd.notna(v)]
+			
+			if split_by in ['CNV_classif', 'malignant_classif']:
+				desired_order = ['Normal', 'Malignant-high confidence', 'Malignant-like', 'Unknown']
+				unique_splits = [k for k in desired_order if k in present_vals]
+				unique_splits += [v for v in present_vals if v not in unique_splits]
+			elif split_by == 'knn_classif':
+				unique_splits = [k for k in knn_colors.keys() if k in present_vals]
+				unique_splits += [v for v in present_vals if v not in unique_splits]
+			else:
+				unique_splits = sorted(present_vals)
+			
+			for val in unique_splits:
+				group_mask = raw_vals == val
+				group_idx = np.where(group_mask)[0]
+				if len(group_idx) == 0:
+					continue
+				group_mat = mat[group_idx, :]
+				
+				if cluster_cells and len(group_idx) > 1:
+					order, _ = get_clusters(group_mat, threads=threads)
+				else:
+					order = np.arange(len(group_idx))
+					
+				cell_groups[val] = {
+					'mat': group_mat[order, :],
+					'rows': group_idx[order]
+				}
+		else:
+			all_idx = np.arange(n_total_cells)
+			if cluster_cells and len(all_idx) > 1:
+				order, _ = get_clusters(mat, threads=threads)
+			else:
+				order = all_idx
+			cell_groups['All Cells'] = {
+				'mat': mat[order, :],
+				'rows': all_idx[order]
+			}
 
-        # Heatmap color scale limits
-        if vmin is None or vmax is None:
-            p1, p99 = np.percentile(mat.ravel(), [1, 99])
-            auto_lim = max(abs(p1), abs(p99))
-            auto_lim = max(auto_lim, 0.05)
-            vmin, vmax = -auto_lim, auto_lim
+		# Global Color Palette Setup
+		palettes = ["Set3", "tab20", 'Paired'] 
+		all_legends_data = []
+		global_group_colors = {}
 
-        # Build Dynamic GridSpec Layout
-        split_gap_height = max(1, int(0.008 * n_total_cells)) 
-        chr_height = max(1, int(0.03 * n_total_cells))
+		if color_vars:
+			for idx, var in enumerate(color_vars):
+				if var not in sample_adata.obs.columns:
+					continue # Skip missing columns defensively
+					
+				unique_vals = sorted([v for v in pd.unique(sample_adata.obs[var]) if pd.notna(v)])
+				has_nan = sample_adata.obs[var].isna().any()
+				
+				if var in ['CNV_classif', 'malignant_classif']:
+					group_to_color = {g: mcolors.to_rgba(my_colors.get(g, '#CCCCCC')) for g in unique_vals}
+				elif var == 'knn_classif':
+					group_to_color = {g: mcolors.to_rgba(knn_colors.get(g, '#CCCCCC')) for g in unique_vals}
+				else:
+					cat_cmap = plt.colormaps[palettes[idx % len(palettes)]]
+					group_to_color = {g: cat_cmap(i % len(cat_cmap.colors)) for i, g in enumerate(unique_vals)}
+				
+				if has_nan:
+					group_to_color['nan'] = mcolors.to_rgba('#D3D3D3')
+					if 'nan' not in unique_vals:
+						unique_vals.append('nan')
+				
+				global_group_colors[var] = group_to_color
+				handles = [patches.Patch(color=group_to_color[g], label=str(g)) for g in unique_vals]
+				
+				display_title = legend_titles.get(var, var)
+				all_legends_data.append((handles, display_title))
 
-        height_ratios = []
-        group_keys = list(cell_groups.keys())
-        for i, val in enumerate(group_keys):
-            height_ratios.append(len(cell_groups[val]['rows']))
-            if i < len(group_keys) - 1:
-                height_ratios.append(split_gap_height)
-                
-        height_ratios.append(chr_height)
-        n_rows = len(height_ratios)
+		# Heatmap color scale limits
+		if vmin is None or vmax is None:
+			p1, p99 = np.percentile(mat.ravel(), [1, 99])
+			auto_lim = max(abs(p1), abs(p99))
+			auto_lim = max(auto_lim, 0.05)
+			vmin, vmax = -auto_lim, auto_lim
 
-        if has_continuous:
-            width_ratios = [5, 0.15, 45, 0.15, 1, 1, 10] 
-            col_left_sbar = 0
-            col_heatmap = 2
-            col_right_sbar = 4
-            col_right_panel = 6
-        else:
-            width_ratios = [5, 0.15, 45, 1, 10]
-            col_left_sbar = 0
-            col_heatmap = 2
-            col_right_sbar = None
-            col_right_panel = 4
+		# Build Dynamic GridSpec Layout
+		split_gap_height = max(1, int(0.008 * n_total_cells)) 
+		chr_height = max(1, int(0.03 * n_total_cells))
 
-        fig = plt.figure(figsize=figsize)
-        gs = GridSpec(
-            n_rows, len(width_ratios), hspace=0.005, wspace=0.005,
-            height_ratios=height_ratios, width_ratios=width_ratios
-        )
+		height_ratios = []
+		group_keys = list(cell_groups.keys())
+		for i, val in enumerate(group_keys):
+			height_ratios.append(len(cell_groups[val]['rows']))
+			if i < len(group_keys) - 1:
+				height_ratios.append(split_gap_height)
+				
+		height_ratios.append(chr_height)
+		n_rows = len(height_ratios)
 
-        norm = mcolors.TwoSlopeNorm(vmin=vmin, vcenter=vcenter, vmax=vmax)
-        
-        # Render Sub-Heatmaps for each classification split
-        curr_row = 0
-        unique_chroms = np.unique(chromosomes)
-        chrom_to_int = {c: i for i, c in enumerate(unique_chroms)}
-        chrom_ints = np.array([chrom_to_int[c] for c in chromosomes])
+		if has_continuous:
+			width_ratios = [5, 0.15, 45, 0.15, 1, 1, 10] 
+			col_left_sbar = 0
+			col_heatmap = 2
+			col_right_sbar = 4
+			col_right_panel = 6
+		else:
+			width_ratios = [5, 0.15, 45, 1, 10]
+			col_left_sbar = 0
+			col_heatmap = 2
+			col_right_sbar = None
+			col_right_panel = 4
 
-        for i, val in enumerate(group_keys):
-            g_data = cell_groups[val]
-            n_group_cells = len(g_data['rows'])
-            
-            # Main CNV Heatmap
-            ax_obs = fig.add_subplot(gs[curr_row, col_heatmap])
-            im = ax_obs.imshow(g_data['mat'], aspect="auto", cmap=cmap, norm=norm, interpolation="none")
-            ax_obs.set_xticks([]); ax_obs.set_yticks([])
+		fig = plt.figure(figsize=figsize)
+		gs = GridSpec(
+			n_rows, len(width_ratios), hspace=0.005, wspace=0.005,
+			height_ratios=height_ratios, width_ratios=width_ratios
+		)
 
-            # Categorical Left Sidebars
-            if color_vars:
-                gs_obs_sbar = GridSpecFromSubplotSpec(1, len(color_vars), subplot_spec=gs[curr_row, col_left_sbar], wspace=0.15)
-                for c_idx, var in enumerate(color_vars):
-                    if var not in global_group_colors: continue # Skip if skipped above
-                    
-                    ax_obs_var = fig.add_subplot(gs_obs_sbar[0, c_idx])
-                    obs_c_mat = np.zeros((n_group_cells, 1, 4))
-                    var_vals = sample_adata.obs[var].values[g_data['rows']]
-                    
-                    for r_idx, v in enumerate(var_vals):
-                        lookup_v = 'nan' if pd.isna(v) else v
-                        obs_c_mat[r_idx, 0, :] = global_group_colors[var].get(lookup_v, mcolors.to_rgba('#CCCCCC'))
-                    
-                    ax_obs_var.imshow(obs_c_mat, aspect="auto", interpolation="none")
-                    ax_obs_var.set_yticks([])
-                    
-                    if i == len(group_keys) - 1:
-                        ax_obs_var.set_xticks([0])
-                        display_title = legend_titles.get(var, var)
-                        ax_obs_var.set_xticklabels([display_title], rotation=90, ha="center", va="top", fontsize=9)
-                        ax_obs_var.tick_params(axis="x", length=0, pad=2)
-                    else:
-                        ax_obs_var.set_xticks([])
+		norm = mcolors.TwoSlopeNorm(vmin=vmin, vcenter=vcenter, vmax=vmax)
+		
+		# Render Sub-Heatmaps for each classification split
+		curr_row = 0
+		unique_chroms = np.unique(chromosomes)
+		chrom_to_int = {c: i for i, c in enumerate(unique_chroms)}
+		chrom_ints = np.array([chrom_to_int[c] for c in chromosomes])
 
-                    for spine in ax_obs_var.spines.values():
-                        spine.set_visible(True); spine.set_color("black"); spine.set_linewidth(1.0)
+		for i, val in enumerate(group_keys):
+			g_data = cell_groups[val]
+			n_group_cells = len(g_data['rows'])
+			
+			# Main CNV Heatmap
+			ax_obs = fig.add_subplot(gs[curr_row, col_heatmap])
+			im = ax_obs.imshow(g_data['mat'], aspect="auto", cmap=cmap, norm=norm, interpolation="none")
+			ax_obs.set_xticks([]); ax_obs.set_yticks([])
 
-            # Continuous Right Sidebar
-            if has_continuous:
-                ax_score_sbar = fig.add_subplot(gs[curr_row, col_right_sbar])
-                group_scores = sample_adata.obs[continuous_var].values[g_data['rows']].astype(float)
-                
-                score_rgba = np.zeros((n_group_cells, 1, 4))
-                for r_idx, s_val in enumerate(group_scores):
-                    if pd.isna(s_val):
-                        score_rgba[r_idx, 0, :] = mcolors.to_rgba('#CCCCCC')
-                    else:
-                        score_rgba[r_idx, 0, :] = score_cm(score_norm(s_val))
-                        
-                ax_score_sbar.imshow(score_rgba, aspect="auto", interpolation="none")
-                ax_score_sbar.set_yticks([])
-                ax_score_sbar.set_xticks([])
+			# Categorical Left Sidebars
+			if color_vars:
+				gs_obs_sbar = GridSpecFromSubplotSpec(1, len(color_vars), subplot_spec=gs[curr_row, col_left_sbar], wspace=0.15)
+				for c_idx, var in enumerate(color_vars):
+					if var not in global_group_colors: continue # Skip if skipped above
+					
+					ax_obs_var = fig.add_subplot(gs_obs_sbar[0, c_idx])
+					obs_c_mat = np.zeros((n_group_cells, 1, 4))
+					var_vals = sample_adata.obs[var].values[g_data['rows']]
+					
+					for r_idx, v in enumerate(var_vals):
+						lookup_v = 'nan' if pd.isna(v) else v
+						obs_c_mat[r_idx, 0, :] = global_group_colors[var].get(lookup_v, mcolors.to_rgba('#CCCCCC'))
+					
+					ax_obs_var.imshow(obs_c_mat, aspect="auto", interpolation="none")
+					ax_obs_var.set_yticks([])
+					
+					if i == len(group_keys) - 1:
+						ax_obs_var.set_xticks([0])
+						display_title = legend_titles.get(var, var)
+						ax_obs_var.set_xticklabels([display_title], rotation=90, ha="center", va="top", fontsize=9)
+						ax_obs_var.tick_params(axis="x", length=0, pad=2)
+					else:
+						ax_obs_var.set_xticks([])
 
-                for spine in ax_score_sbar.spines.values():
-                    spine.set_visible(True); spine.set_color("black"); spine.set_linewidth(1.0)
-            
-            # Chromosome boundary lines
-            for b in range(1, len(chromosomes)):
-                if chromosomes[b].replace("chr", "")[:-1] != chromosomes[b - 1].replace("chr", "")[:-1]:
-                    ax_obs.axvline(b - 0.5, color="#121212", linewidth=1.25, alpha=0.8, zorder=5)
-                else:
-                    ax_obs.axvline(b - 0.5, color="#333333", linewidth=1.0, alpha=0.8, zorder=5)
-                    
-            curr_row += 2
+					for spine in ax_obs_var.spines.values():
+						spine.set_visible(True); spine.set_color("black"); spine.set_linewidth(1.0)
 
-        # Chromosome Track at bottom
-        chr_row_idx = n_rows - 1
-        ax_chr = fig.add_subplot(gs[chr_row_idx, col_heatmap])
-        ax_chr.set_xlim(-0.5, len(chromosomes) - 0.5)
-        ax_chr.set_ylim(-0.5, 0.5)
-        ax_chr.axis("off")
+			# Continuous Right Sidebar
+			if has_continuous:
+				ax_score_sbar = fig.add_subplot(gs[curr_row, col_right_sbar])
+				group_scores = sample_adata.obs[continuous_var].values[g_data['rows']].astype(float)
+				
+				score_rgba = np.zeros((n_group_cells, 1, 4))
+				for r_idx, s_val in enumerate(group_scores):
+					if pd.isna(s_val):
+						score_rgba[r_idx, 0, :] = mcolors.to_rgba('#CCCCCC')
+					else:
+						score_rgba[r_idx, 0, :] = score_cm(score_norm(s_val))
+						
+				ax_score_sbar.imshow(score_rgba, aspect="auto", interpolation="none")
+				ax_score_sbar.set_yticks([])
+				ax_score_sbar.set_xticks([])
 
-        for chrom in unique_chroms:
-            positions = np.where(chrom_ints == chrom_to_int[chrom])[0]
-            mid = positions[len(positions) // 2]
-            chrom_label = chrom.replace("chr", "").replace("M", "")
-            
-            # Check if this arm/chromosome is marked
-            is_marked = (chrom in sample_marked_arms or 
-                         chrom.replace("chr", "") in sample_marked_arms or 
-                         chrom_label in sample_marked_arms)
-            
-            font_weight = "bold" if is_marked else "normal"
-            
-            ax_chr.text(
-                mid, 0.3, chrom_label, ha="center", va="top", rotation=90, 
-                fontsize=11, fontweight=font_weight
-            )
+				for spine in ax_score_sbar.spines.values():
+					spine.set_visible(True); spine.set_color("black"); spine.set_linewidth(1.0)
+			
+			# Chromosome boundary lines
+			for b in range(1, len(chromosomes)):
+				if chromosomes[b].replace("chr", "")[:-1] != chromosomes[b - 1].replace("chr", "")[:-1]:
+					ax_obs.axvline(b - 0.5, color="#121212", linewidth=1.25, alpha=0.8, zorder=5)
+				else:
+					ax_obs.axvline(b - 0.5, color="#333333", linewidth=1.0, alpha=0.8, zorder=5)
+					
+			curr_row += 2
 
-        # Legends and Colorbars Panel
-        heatmap_span_rows = chr_row_idx
-        
-        gs_right = GridSpecFromSubplotSpec(
-            2, 1, 
-            subplot_spec=gs[0:heatmap_span_rows, col_right_panel], 
-            height_ratios=[1.2, 3.8],
-            hspace=0.04
-        )
-        
-        # Colorbars
-        if has_continuous:
-            gs_cbars_outer = GridSpecFromSubplotSpec(1, 2, subplot_spec=gs_right[0, 0], width_ratios=[1.5, 8.5])
-            gs_cbars = GridSpecFromSubplotSpec(2, 1, subplot_spec=gs_cbars_outer[0, 0], height_ratios=[1, 1], hspace=0.45)
-            
-            # CNV values Colorbar
-            ax_cbar1 = fig.add_subplot(gs_cbars[0, 0])
-            fig.colorbar(im, cax=ax_cbar1)
-            ax_cbar1.set_title("CNV values", fontsize=11, pad=4, loc="left")
-            ax_cbar1.tick_params(labelsize=8)
-            ax_cbar1.yaxis.set_ticks_position("right")
+		# Chromosome Track at bottom
+		chr_row_idx = n_rows - 1
+		ax_chr = fig.add_subplot(gs[chr_row_idx, col_heatmap])
+		ax_chr.set_xlim(-0.5, len(chromosomes) - 0.5)
+		ax_chr.set_ylim(-0.5, 0.5)
+		ax_chr.axis("off")
 
-            # Continuous Score Colorbar 
-            ax_cbar2 = fig.add_subplot(gs_cbars[1, 0])
-            sm = plt.cm.ScalarMappable(cmap=score_cm, norm=score_norm)
-            sm.set_array([])
-            fig.colorbar(sm, cax=ax_cbar2)
-            cbar_title = legend_titles.get(continuous_var, continuous_var)
-            ax_cbar2.set_title(cbar_title, fontsize=11, pad=4, loc="left")
-            ax_cbar2.tick_params(labelsize=8)
-            ax_cbar2.yaxis.set_ticks_position("right")
-        else:
-            gs_cbar = GridSpecFromSubplotSpec(1, 2, subplot_spec=gs_right[0, 0], width_ratios=[1.2, 8.8])
-            ax_cbar = fig.add_subplot(gs_cbar[0, 0])
-            fig.colorbar(im, cax=ax_cbar)
-            ax_cbar.set_title("CNV values", fontsize=9, pad=3, loc="left")
-            ax_cbar.tick_params(labelsize=8)
-            ax_cbar.yaxis.set_ticks_position("right")
+		for chrom in unique_chroms:
+			positions = np.where(chrom_ints == chrom_to_int[chrom])[0]
+			mid = positions[len(positions) // 2]
+			chrom_label = chrom.replace("chr", "").replace("M", "")
+			
+			# Check if this arm/chromosome is marked
+			is_marked = (chrom in sample_marked_arms or 
+						chrom.replace("chr", "") in sample_marked_arms or 
+						chrom_label in sample_marked_arms)
+			
+			font_weight = "bold" if is_marked else "normal"
+			
+			ax_chr.text(
+				mid, 0.3, chrom_label, ha="center", va="top", rotation=90, 
+				fontsize=11, fontweight=font_weight
+			)
 
-        # Categorical Legends
-        ax_leg = fig.add_subplot(gs_right[1, 0])
-        ax_leg.axis("off")
+		# Legends and Colorbars Panel
+		heatmap_span_rows = chr_row_idx
+		
+		gs_right = GridSpecFromSubplotSpec(
+			2, 1, 
+			subplot_spec=gs[0:heatmap_span_rows, col_right_panel], 
+			height_ratios=[1.2, 3.8],
+			hspace=0.04
+		)
+		
+		# Colorbars
+		if has_continuous:
+			gs_cbars_outer = GridSpecFromSubplotSpec(1, 2, subplot_spec=gs_right[0, 0], width_ratios=[1.5, 8.5])
+			gs_cbars = GridSpecFromSubplotSpec(2, 1, subplot_spec=gs_cbars_outer[0, 0], height_ratios=[1, 1], hspace=0.45)
+			
+			# CNV values Colorbar
+			ax_cbar1 = fig.add_subplot(gs_cbars[0, 0])
+			fig.colorbar(im, cax=ax_cbar1)
+			ax_cbar1.set_title("CNV values", fontsize=11, pad=4, loc="left")
+			ax_cbar1.tick_params(labelsize=8)
+			ax_cbar1.yaxis.set_ticks_position("right")
 
-        leg_y = 1.0 
-        for idx, (handles, var_title) in enumerate(all_legends_data):
-            leg = ax_leg.legend(
-                handles=handles, title=var_title, loc="upper left", bbox_to_anchor=(0.0, leg_y),
-                ncol=1, fontsize=10, title_fontsize=11, frameon=False,
-                handlelength=1.0, handleheight=1.0, columnspacing=0.8,
-                labelspacing=0.4, borderpad=0.1, handletextpad=0.3, borderaxespad=0.0
-            )
-            
-            leg._legend_box.align = "left" 
-            
-            ax_leg.add_artist(leg)
-            leg_y -= (len(handles) * 0.035) + 0.06
+			# Continuous Score Colorbar 
+			ax_cbar2 = fig.add_subplot(gs_cbars[1, 0])
+			sm = plt.cm.ScalarMappable(cmap=score_cm, norm=score_norm)
+			sm.set_array([])
+			fig.colorbar(sm, cax=ax_cbar2)
+			cbar_title = legend_titles.get(continuous_var, continuous_var)
+			ax_cbar2.set_title(cbar_title, fontsize=11, pad=4, loc="left")
+			ax_cbar2.tick_params(labelsize=8)
+			ax_cbar2.yaxis.set_ticks_position("right")
+		else:
+			gs_cbar = GridSpecFromSubplotSpec(1, 2, subplot_spec=gs_right[0, 0], width_ratios=[1.2, 8.8])
+			ax_cbar = fig.add_subplot(gs_cbar[0, 0])
+			fig.colorbar(im, cax=ax_cbar)
+			ax_cbar.set_title("CNV values", fontsize=9, pad=3, loc="left")
+			ax_cbar.tick_params(labelsize=8)
+			ax_cbar.yaxis.set_ticks_position("right")
 
-        fig.suptitle(f"Sample: {sample} | {n_total_cells} cells", fontsize=13, y=0.90)
- 
-        if pdf:
-            pdf.savefig(fig, bbox_inches='tight', pad_inches=0.5)
-        else:
-            plt.show()
-            
-        plt.close(fig)
+		# Categorical Legends
+		ax_leg = fig.add_subplot(gs_right[1, 0])
+		ax_leg.axis("off")
 
-    # Close PDF object after the loop finishes
-    if pdf:
-        pdf.close()
+		leg_y = 1.0 
+		for idx, (handles, var_title) in enumerate(all_legends_data):
+			leg = ax_leg.legend(
+				handles=handles, title=var_title, loc="upper left", bbox_to_anchor=(0.0, leg_y),
+				ncol=1, fontsize=10, title_fontsize=11, frameon=False,
+				handlelength=1.0, handleheight=1.0, columnspacing=0.8,
+				labelspacing=0.4, borderpad=0.1, handletextpad=0.3, borderaxespad=0.0
+			)
+			
+			leg._legend_box.align = "left" 
+			
+			ax_leg.add_artist(leg)
+			leg_y -= (len(handles) * 0.035) + 0.06
 
-    logging.info(">> CNV Heatmap by Sample succesfully generated!")
+		fig.suptitle(f"Sample: {sample} | {n_total_cells} cells", fontsize=13, y=0.93)
+
+		if pdf:
+			pdf.savefig(fig, bbox_inches='tight', pad_inches=0.5)
+		else:
+			plt.show()
+			
+		plt.close(fig)
+
+	# Close PDF object after the loop finishes
+	if pdf:
+		pdf.close()
 
 
 def plot_CNV_density(adata, sample_key, sample_name=None, show=True):
-    """
-    Plots paired joint distribution metrics (continuous vs classification) per sample.
-    
-    Parameters
-    ----------
-    adata : AnnData
-        Annotated data object containing cell metrics in `.obs`.
-    sample_name : str, optional
-        Specific sample to plot. If None, plots all unique samples in `adata.obs[sample_key]`.
-    sample_key : str, default 'sample'
-        Column in `adata.obs` defining sample identifiers.
-        
-    Returns
-    -------
-    fig : matplotlib.figure.Figure
-        The generated figure object containing the plot layout.
-    """
-    if sample_name is not None:
-        samples = [sample_name] if isinstance(sample_name, str) else list(sample_name)
-    else:
-        samples = adata.obs[sample_key].unique()
+	"""
+	Plots paired joint distribution metrics (continuous vs classification) per sample.
+	
+	Parameters
+	----------
+	adata : AnnData
+		Annotated data object containing cell metrics in `.obs`.
+	sample_name : str, optional
+		Specific sample to plot. If None, plots all unique samples in `adata.obs[sample_key]`.
+	sample_key : str, default 'sample'
+		Column in `adata.obs` defining sample identifiers.
+		
+	Returns
+	-------
+	fig : matplotlib.figure.Figure
+		The generated figure object containing the plot layout.
+	"""
+	if sample_name is not None:
+		samples = [sample_name] if isinstance(sample_name, str) else list(sample_name)
+	else:
+		samples = adata.obs[sample_key].unique()
 
-    num_samples = len(samples)
-    fig = plt.figure(figsize=(14, 6 * num_samples))
+	num_samples = len(samples)
+	fig = plt.figure(figsize=(14, 6 * num_samples))
 
-    # Add vertical spacing (hspace) between sample rows
-    row_subfigs = fig.subfigures(nrows=num_samples, ncols=1, hspace=0.15)
-    if num_samples == 1:
-        row_subfigs = [row_subfigs]
+	# Add vertical spacing (hspace) between sample rows
+	row_subfigs = fig.subfigures(nrows=num_samples, ncols=1, hspace=0.15)
+	if num_samples == 1:
+		row_subfigs = [row_subfigs]
 
-    for i, sample in enumerate(samples):
-        adata_sample = adata[adata.obs[sample_key] == sample]
+	for i, sample in enumerate(samples):
+		adata_sample = adata[adata.obs[sample_key] == sample]
 
-        row_sf = row_subfigs[i]
-        row_sf.suptitle(f"Sample: {sample}", fontsize=16, fontweight="bold", y=0.95, x=0.45)
+		row_sf = row_subfigs[i]
+		row_sf.suptitle(f"Sample: {sample}", fontsize=16, fontweight="bold", y=0.95, x=0.45)
 
-        # Split row into two column subfigures
-        col_subfigs = row_sf.subfigures(nrows=1, ncols=2)
-        sf1, sf2 = col_subfigs[0], col_subfigs[1]
+		# Split row into two column subfigures
+		col_subfigs = row_sf.subfigures(nrows=1, ncols=2)
+		sf1, sf2 = col_subfigs[0], col_subfigs[1]
 
-        cos_cutoff = adata_sample.obs['cos_cutoff'].mean()
-        centroids_cutoff = adata_sample.obs['centroids_cutoff'].mean()
-        corr_cutoff = adata_sample.obs['corr_cutoff'].max()
-        min_val = adata_sample.obs['corr_score'].min()
-        plot_max = 1.0
+		cos_cutoff = adata_sample.obs['cos_cutoff'].mean()
+		centroids_cutoff = adata_sample.obs['centroids_cutoff'].mean()
+		corr_cutoff = adata_sample.obs['corr_cutoff'].max()
+		min_val = adata_sample.obs['corr_score'].min()
+		plot_max = 1.0
 
-        # --- Custom Colormap ---
-        ratio = max(0, min(1, (corr_cutoff - min_val) / (plot_max - min_val)))
-        split_idx = int(ratio * 256)
-        
-        colors = np.zeros((256, 4))
-        colors[:split_idx] = plt.matplotlib.colors.to_rgba("#9ED5FAFF")
-        red_gradient = plt.cm.Reds(np.linspace(0.2, 1.0, 256 - split_idx))
-        colors[split_idx:] = red_gradient
-        custom_cmap = mcolors.LinearSegmentedColormap.from_list("BlueRed", colors)
+		# --- Custom Colormap ---
+		ratio = max(0, min(1, (corr_cutoff - min_val) / (plot_max - min_val)))
+		split_idx = int(ratio * 256)
+		
+		colors = np.zeros((256, 4))
+		colors[:split_idx] = plt.matplotlib.colors.to_rgba("#9ED5FAFF")
+		red_gradient = plt.cm.Reds(np.linspace(0.2, 1.0, 256 - split_idx))
+		colors[split_idx:] = red_gradient
+		custom_cmap = mcolors.LinearSegmentedColormap.from_list("BlueRed", colors)
 
-        # ==========================================
-        # PLOT 1: Correlation (Left Column)
-        # ==========================================
-        gs1 = sf1.add_gridspec(5, 6, wspace=0.1, hspace=0.1)
-        ax_joint1 = sf1.add_subplot(gs1[1:5, 0:4])
-        ax_marg_x1 = sf1.add_subplot(gs1[0, 0:4], sharex=ax_joint1)
-        ax_marg_y1 = sf1.add_subplot(gs1[1:5, 4], sharey=ax_joint1)
-        cax = sf1.add_subplot(gs1[2:4, 5])
+		# ==========================================
+		# PLOT 1: Correlation (Left Column)
+		# ==========================================
+		gs1 = sf1.add_gridspec(5, 6, wspace=0.1, hspace=0.1)
+		ax_joint1 = sf1.add_subplot(gs1[1:5, 0:4])
+		ax_marg_x1 = sf1.add_subplot(gs1[0, 0:4], sharex=ax_joint1)
+		ax_marg_y1 = sf1.add_subplot(gs1[1:5, 4], sharey=ax_joint1)
+		cax = sf1.add_subplot(gs1[2:4, 5])
 
-        sns.scatterplot(data=adata_sample.obs, x="distance_ratio", y="cos_dist", 
-                        hue="corr_score", palette=custom_cmap, hue_norm=(min_val, plot_max),
-                        s=15, linewidth=0, legend=False, ax=ax_joint1)
-        sns.kdeplot(data=adata_sample.obs, x="distance_ratio", fill=True, ax=ax_marg_x1, legend=False)
-        sns.kdeplot(data=adata_sample.obs, y="cos_dist", fill=True, ax=ax_marg_y1, legend=False)
+		sns.scatterplot(data=adata_sample.obs, x="distance_ratio", y="cos_dist", 
+						hue="corr_score", palette=custom_cmap, hue_norm=(min_val, plot_max),
+						s=15, linewidth=0, legend=False, ax=ax_joint1, rasterized=True)
+		sns.kdeplot(data=adata_sample.obs, x="distance_ratio", fill=True, ax=ax_marg_x1, legend=False)
+		sns.kdeplot(data=adata_sample.obs, y="cos_dist", fill=True, ax=ax_marg_y1, legend=False)
 
-        ax_marg_x1.axis('off')
-        ax_marg_y1.axis('off')
-        ax_joint1.set_xlim(-0.05, 1.05)
-        ax_joint1.set_ylim(-0.05, 1.05)
-        ax_joint1.axhline(cos_cutoff, color="black", linestyle="--", linewidth=1.2, zorder=0)
-        ax_joint1.axvline(centroids_cutoff, color="black", linestyle="--", linewidth=1.2, zorder=0)
+		ax_marg_x1.axis('off')
+		ax_marg_y1.axis('off')
+		ax_joint1.set_xlim(-0.05, 1.05)
+		ax_joint1.set_ylim(-0.05, 1.05)
 
-        # Custom Right Density Bar
-        scores = adata_sample.obs['corr_score'].dropna()
-        y_grid = np.linspace(min_val, plot_max, 200)
-        kde = gaussian_kde(scores)(y_grid)
+		ax_joint1.set_xlabel("Distance Ratio", fontsize=12)
+		ax_joint1.set_ylabel("Cosine Distance", fontsize=12)
 
-        cax.imshow(y_grid[:, None], cmap=custom_cmap, aspect="auto", origin="lower", 
-                   extent=[0, kde.max() * 1.1, min_val, plot_max])
-        cax.fill_betweenx(y_grid, kde, kde.max() * 1.2, color="white")
-        cax.plot(kde, y_grid, color="black", linewidth=1)
-        cax.axhline(corr_cutoff, color="black", linestyle="--", linewidth=1)
+		ax_joint1.axhline(cos_cutoff, color="black", linestyle="--", linewidth=1.2, zorder=0)
+		ax_joint1.axvline(centroids_cutoff, color="black", linestyle="--", linewidth=1.2, zorder=0)
 
-        cax.set_ylim(min_val, plot_max)
-        cax.set_xlim(0, kde.max() * 1.1)
-        cax.set_title("corr_score", pad=8, fontsize=10)
-        cax.yaxis.tick_right()
-        cax.yaxis.set_label_position("right")
-        cax.set_xticks([]) 
-        for spine in ['top', 'left', 'bottom']:
-            cax.spines[spine].set_visible(False)
+		# Custom Right Density Bar
+		scores = adata_sample.obs['corr_score'].dropna()
+		y_grid = np.linspace(min_val, plot_max, 200)
 
-        # ==========================================
-        # PLOT 2: CNV Classification (Right Column)
-        # ==========================================
-        gs2 = sf2.add_gridspec(5, 5, wspace=0.1, hspace=0.1)
-        ax_joint2 = sf2.add_subplot(gs2[1:5, 0:4])
-        ax_marg_x2 = sf2.add_subplot(gs2[0, 0:4], sharex=ax_joint2)
-        ax_marg_y2 = sf2.add_subplot(gs2[1:5, 4], sharey=ax_joint2)
+		if len(scores) > 1 and scores.nunique() > 1:
+			kde = gaussian_kde(scores)(y_grid)
+		else:
+			# Fallback for 0-variance or single-cell data 
+			# Creates a small flat line so the plotting functions don't crash
+			kde = np.ones_like(y_grid) * 0.1
 
-        # Fallback check for column name
-        classif_col = 'malignant_classif_cnv' if 'malignant_classif_cnv' in adata_sample.obs.columns else 'CNV_classif'
+		kde_max = kde.max() if kde.max() > 0 else 1.0
 
-        sns.scatterplot(data=adata_sample.obs, x="distance_ratio", y="cos_dist", 
-                        hue=classif_col, s=15, linewidth=0, ax=ax_joint2)
-        sns.kdeplot(data=adata_sample.obs, x="distance_ratio", fill=True, ax=ax_marg_x2, legend=False)
-        sns.kdeplot(data=adata_sample.obs, y="cos_dist", fill=True, ax=ax_marg_y2, legend=False)
+		cax.imshow(y_grid[:, None], cmap=custom_cmap, aspect="auto", origin="lower", 
+				extent=[0, kde_max * 1.1, min_val, plot_max])
+		cax.fill_betweenx(y_grid, kde, kde_max * 1.2, color="white")
+		cax.plot(kde, y_grid, color="black", linewidth=1)
+		cax.axhline(corr_cutoff, color="black", linestyle="--", linewidth=1)
 
-        ax_marg_x2.axis('off')
-        ax_marg_y2.axis('off')
-        ax_joint2.set_xlim(-0.05, 1.05)
-        ax_joint2.set_ylim(-0.05, 1.05)
-        ax_joint2.axhline(cos_cutoff, color="black", linestyle="--", linewidth=1.2, zorder=0)
-        ax_joint2.axvline(centroids_cutoff, color="black", linestyle="--", linewidth=1.2, zorder=0)
+		cax.set_ylim(min_val, plot_max)
+		cax.set_xlim(0, kde_max * 1.1)
+		cax.set_title("Corr. score", pad=8, fontsize=10)
+		cax.yaxis.tick_right()
+		cax.yaxis.set_label_position("right")
+		cax.set_xticks([]) 
+		for spine in ['top', 'left', 'bottom']:
+			cax.spines[spine].set_visible(False)
 
-        sns.move_legend(ax_joint2, loc="upper center", bbox_to_anchor=(0.5, -0.15), 
-                        ncols=3, frameon=False, title="")
+		# ==========================================
+		# PLOT 2: CNV Classification (Right Column)
+		# ==========================================
+		gs2 = sf2.add_gridspec(5, 5, wspace=0.1, hspace=0.1)
+		ax_joint2 = sf2.add_subplot(gs2[1:5, 0:4])
+		ax_marg_x2 = sf2.add_subplot(gs2[0, 0:4], sharex=ax_joint2)
+		ax_marg_y2 = sf2.add_subplot(gs2[1:5, 4], sharey=ax_joint2)
 
-    if show:
-        plt.show()
-    else:
-        return fig
+		# Fallback check for column name
+		classif_col = 'malignant_classif_cnv' if 'malignant_classif_cnv' in adata_sample.obs.columns else 'CNV_classif'
+
+		sns.scatterplot(data=adata_sample.obs, x="distance_ratio", y="cos_dist", 
+						hue=classif_col, s=15, linewidth=0, ax=ax_joint2, rasterized=True)
+		sns.kdeplot(data=adata_sample.obs, x="distance_ratio", fill=True, ax=ax_marg_x2, legend=False)
+		sns.kdeplot(data=adata_sample.obs, y="cos_dist", fill=True, ax=ax_marg_y2, legend=False)
+
+		ax_marg_x2.axis('off')
+		ax_marg_y2.axis('off')
+		ax_joint2.set_xlim(-0.05, 1.05)
+		ax_joint2.set_ylim(-0.05, 1.05)
+
+		ax_joint2.set_xlabel("Distance Ratio", fontsize=12)
+		ax_joint2.set_ylabel("Cosine Distance", fontsize=12)
+
+		ax_joint2.axhline(cos_cutoff, color="black", linestyle="--", linewidth=1.2, zorder=0)
+		ax_joint2.axvline(centroids_cutoff, color="black", linestyle="--", linewidth=1.2, zorder=0)
+
+		if ax_joint2.get_legend() is not None:
+			sns.move_legend(ax_joint2, loc="upper center", bbox_to_anchor=(0.5, -0.15), 
+							ncols=3, frameon=False, title="")
+
+	if show:
+		plt.show()
+	else:
+		return fig
 
 
 def plot_alluvial(adata, cell_type_key='cell_type', col2='CNV_classif', col3='malignant_classif', 
-                  color_dict=None, figsize=(12, 6), gap_ratio=0, category_fontsize=10, 
-                  column_fontsize=9, ax=None):
+				color_dict=None, figsize=(12, 6), gap_ratio=0, category_fontsize=10, 
+				column_fontsize=9, ax=None):
 
-        df = adata.obs[[cell_type_key, col2, col3]].astype(str).copy()
-        counts = df.groupby([cell_type_key, col2, col3]).size().reset_index(name='value')
-        counts = counts[counts['value'] > 0]
-        
-      
-        if ax is None:
-            fig, ax = plt.subplots(figsize=figsize)
-            show_plot = True
-        else:
-            show_plot = False
+		df = adata.obs[[cell_type_key, col2, col3]].astype(str).copy()
+		counts = df.groupby([cell_type_key, col2, col3]).size().reset_index(name='value')
+		counts = counts[counts['value'] > 0]
+		
+	
+		if ax is None:
+			fig, ax = plt.subplots(figsize=figsize)
+			show_plot = True
+		else:
+			show_plot = False
 
-        box_width = 0.35 
-        total_cells = counts['value'].sum()
-        total_gap_budget = total_cells * gap_ratio
-        
-        nodes = {0: {}, 1: {}, 2: {}}
-        cols = [cell_type_key, col2, col3]
-        node_ranks = {0: {}, 1: {}, 2: {}}
-        
-        custom_order_col3 = [
-            'Malignant-high confidence', 
-            'Malignant-like', 
-            'Normal', 
-            'Unknown'
-        ]
+		box_width = 0.35 
+		total_cells = counts['value'].sum()
+		total_gap_budget = total_cells * gap_ratio
+		
+		nodes = {0: {}, 1: {}, 2: {}}
+		cols = [cell_type_key, col2, col3]
+		node_ranks = {0: {}, 1: {}, 2: {}}
+		
+		custom_order_col3 = [
+			'Malignant-high confidence', 
+			'Malignant-like', 
+			'Normal', 
+			'Unknown'
+		]
 
-        custom_order_col2 = [
-            'Malignant-high confidence', 
-            'Malignant-like', 
-            'Normal'
-        ]
-        
-        # 3. Calculate node positions
-        for i, col in enumerate(cols):
-            col_counts = counts.groupby(col)['value'].sum()
-            
-            if i == 2:
-                existing = col_counts.index.tolist()
-                order = [c for c in custom_order_col3 if c in existing] + \
-                        [c for c in existing if c not in custom_order_col3]
+		custom_order_col2 = [
+			'Malignant-high confidence', 
+			'Malignant-like', 
+			'Normal'
+		]
+		
+		# 3. Calculate node positions
+		for i, col in enumerate(cols):
+			col_counts = counts.groupby(col)['value'].sum()
+			
+			if i == 2:
+				existing = col_counts.index.tolist()
+				order = [c for c in custom_order_col3 if c in existing] + \
+						[c for c in existing if c not in custom_order_col3]
 
-            elif i == 1:
-                existing = col_counts.index.tolist()
-                order = [c for c in custom_order_col2 if c in existing] + \
-                        [c for c in existing if c not in custom_order_col2]
+			elif i == 1:
+				existing = col_counts.index.tolist()
+				order = [c for c in custom_order_col2 if c in existing] + \
+						[c for c in existing if c not in custom_order_col2]
 
-            else:
-                order = sorted(col_counts.index, reverse=True)
-                
-            num_categories = len(order)
-            
-            if num_categories > 1:
-                col_gap = total_gap_budget / (num_categories - 1)
-                start_y = 0
-            else:
-                col_gap = 0
-                start_y = - (total_gap_budget / 2)
-                
-            y = start_y
-            for rank, val in enumerate(order):
-                if val in col_counts:
-                    count = col_counts[val]
-                    nodes[i][val] = {
-                        'y_top': y, 
-                        'y_bottom': y - count, 
-                        'height': count, 
-                        'current_in': y, 
-                        'current_out': y
-                    }
-                    node_ranks[i][val] = rank
-                    y -= (count + col_gap)
+			else:
+				order = sorted(col_counts.index, reverse=True)
+				
+			num_categories = len(order)
+			
+			if num_categories > 1:
+				col_gap = total_gap_budget / (num_categories - 1)
+				start_y = 0
+			else:
+				col_gap = 0
+				start_y = - (total_gap_budget / 2)
+				
+			y = start_y
+			for rank, val in enumerate(order):
+				if val in col_counts:
+					count = col_counts[val]
+					nodes[i][val] = {
+						'y_top': y, 
+						'y_bottom': y - count, 
+						'height': count, 
+						'current_in': y, 
+						'current_out': y
+					}
+					node_ranks[i][val] = rank
+					y -= (count + col_gap)
 
-        counts['rank1'] = counts[cell_type_key].map(node_ranks[0])
-        counts['rank2'] = counts[col2].map(node_ranks[1])
-        counts['rank3'] = counts[col3].map(node_ranks[2])
+		counts['rank1'] = counts[cell_type_key].map(node_ranks[0])
+		counts['rank2'] = counts[col2].map(node_ranks[1])
+		counts['rank3'] = counts[col3].map(node_ranks[2])
 
-        def draw_flow(x0, x1, y0_top, y0_bot, y1_top, y1_bot, color):
-            mid_x = (x0 + x1) / 2
-            verts = [
-                (x0, y0_top), (mid_x, y0_top), (mid_x, y1_top), (x1, y1_top),
-                (x1, y1_bot), (mid_x, y1_bot), (mid_x, y0_bot), (x0, y0_bot), (x0, y0_top)
-            ]
-            codes = [
-                MplPath.MOVETO, MplPath.CURVE4, MplPath.CURVE4, MplPath.CURVE4, 
-                MplPath.LINETO, MplPath.CURVE4, MplPath.CURVE4, MplPath.CURVE4, MplPath.CLOSEPOLY]
-                
-            path = MplPath(verts, codes)
-            patch = patches.PathPatch(path, facecolor=color, lw=1, edgecolor='white', alpha=0.85, zorder=1)
-            ax.add_patch(patch)
+		def draw_flow(x0, x1, y0_top, y0_bot, y1_top, y1_bot, color):
+			mid_x = (x0 + x1) / 2
+			verts = [
+				(x0, y0_top), (mid_x, y0_top), (mid_x, y1_top), (x1, y1_top),
+				(x1, y1_bot), (mid_x, y1_bot), (mid_x, y0_bot), (x0, y0_bot), (x0, y0_top)
+			]
+			codes = [
+				MplPath.MOVETO, MplPath.CURVE4, MplPath.CURVE4, MplPath.CURVE4, 
+				MplPath.LINETO, MplPath.CURVE4, MplPath.CURVE4, MplPath.CURVE4, MplPath.CLOSEPOLY]
+				
+			path = MplPath(verts, codes)
+			patch = patches.PathPatch(path, facecolor=color, lw=1, edgecolor='white', alpha=0.85, zorder=1)
+			ax.add_patch(patch)
 
-        if color_dict is None:
-            color_dict = {
-                'Malignant-high confidence': '#DF8B9B',
-                'Malignant-like': '#AEBA7A',
-                'Normal': '#74C4B5',
-                'Unknown': '#A093C5'
-            }
+		if color_dict is None:
+			color_dict = {
+				'Malignant-high confidence': '#DF8B9B',
+				'Malignant-like': '#AEBA7A',
+				'Normal': '#74C4B5',
+				'Unknown': '#A093C5'
+			}
 
-        counts_12 = counts.sort_values(by=['rank1', 'rank2', 'rank3'])
-        for _, row in counts_12.iterrows():
-            v1, v2, v3, val = row[cell_type_key], row[col2], row[col3], row['value']
-            
-            y0_top = nodes[0][v1]['current_out']
-            y0_bot = y0_top - val
-            nodes[0][v1]['current_out'] = y0_bot
-            
-            y1_top = nodes[1][v2]['current_in']
-            y1_bot = y1_top - val
-            nodes[1][v2]['current_in'] = y1_bot
-            
-            draw_flow(0 + box_width/2, 1 - box_width/2, y0_top, y0_bot, y1_top, y1_bot, color_dict.get(v3, '#CCCCCC'))
+		counts_12 = counts.sort_values(by=['rank1', 'rank2', 'rank3'])
+		for _, row in counts_12.iterrows():
+			v1, v2, v3, val = row[cell_type_key], row[col2], row[col3], row['value']
+			
+			y0_top = nodes[0][v1]['current_out']
+			y0_bot = y0_top - val
+			nodes[0][v1]['current_out'] = y0_bot
+			
+			y1_top = nodes[1][v2]['current_in']
+			y1_bot = y1_top - val
+			nodes[1][v2]['current_in'] = y1_bot
+			
+			draw_flow(0 + box_width/2, 1 - box_width/2, y0_top, y0_bot, y1_top, y1_bot, color_dict.get(v3, '#CCCCCC'))
 
-        counts_23 = counts.sort_values(by=['rank2', 'rank1', 'rank3'])
-        for _, row in counts_23.iterrows():
-            v1, v2, v3, val = row[cell_type_key], row[col2], row[col3], row['value']
-            
-            y1_top = nodes[1][v2]['current_out']
-            y1_bot = y1_top - val
-            nodes[1][v2]['current_out'] = y1_bot
-            
-            y2_top = nodes[2][v3]['current_in']
-            y2_bot = y2_top - val
-            nodes[2][v3]['current_in'] = y2_bot
-            
-            draw_flow(1 + box_width/2, 2 - box_width/2, y1_top, y1_bot, y2_top, y2_bot, color_dict.get(v3, '#CCCCCC'))
+		counts_23 = counts.sort_values(by=['rank2', 'rank1', 'rank3'])
+		for _, row in counts_23.iterrows():
+			v1, v2, v3, val = row[cell_type_key], row[col2], row[col3], row['value']
+			
+			y1_top = nodes[1][v2]['current_out']
+			y1_bot = y1_top - val
+			nodes[1][v2]['current_out'] = y1_bot
+			
+			y2_top = nodes[2][v3]['current_in']
+			y2_bot = y2_top - val
+			nodes[2][v3]['current_in'] = y2_bot
+			
+			draw_flow(1 + box_width/2, 2 - box_width/2, y1_top, y1_bot, y2_top, y2_bot, color_dict.get(v3, '#CCCCCC'))
 
-        for i, col in enumerate(cols):
-            for val, dims in nodes[i].items():
-                rect = patches.Rectangle(
-                    (i - box_width/2, dims['y_bottom']), box_width, dims['height'], 
-                    facecolor='white', edgecolor='black', lw=1, zorder=10
-                )
-                ax.add_patch(rect)
-                
-                ax.text(
-                    i, (dims['y_top'] + dims['y_bottom'])/2, val, 
-                    ha='center', va='center', 
-                    fontsize=category_fontsize, zorder=11, fontweight='bold'
-                )
+		for i, col in enumerate(cols):
+			for val, dims in nodes[i].items():
+				rect = patches.Rectangle(
+					(i - box_width/2, dims['y_bottom']), box_width, dims['height'], 
+					facecolor='white', edgecolor='black', lw=1, zorder=10
+				)
+				ax.add_patch(rect)
+				
+				ax.text(
+					i, (dims['y_top'] + dims['y_bottom'])/2, val, 
+					ha='center', va='center', 
+					fontsize=category_fontsize, zorder=11, fontweight='bold'
+				)
 
-        max_height = total_cells + total_gap_budget
-        ax.set_xlim(-0.5, 2.5)
-        ax.set_ylim(-max_height - (total_gap_budget * 0.05), total_gap_budget * 0.05)
-        
-        ax.set_xticks([0, 1, 2])
-        ax.set_xticklabels([cell_type_key, col2, col3], fontsize=column_fontsize, fontweight='normal')
-        ax.set_yticks([])
-        
-        # Hide the tick mark lines on the x-axis completely
-        ax.tick_params(axis='x', which='both', bottom=False, top=False)
-        
-        for spine in ax.spines.values():
-            spine.set_visible(False)
+		max_height = total_cells + total_gap_budget
+		ax.set_xlim(-0.5, 2.5)
+		ax.set_ylim(-max_height - (total_gap_budget * 0.05), total_gap_budget * 0.05)
+		
+		ax.set_xticks([0, 1, 2])
+		ax.set_xticklabels([cell_type_key, col2, col3], fontsize=column_fontsize, fontweight='normal')
+		ax.set_yticks([])
+		
+		# Hide the tick mark lines on the x-axis completely
+		ax.tick_params(axis='x', which='both', bottom=False, top=False)
+		
+		for spine in ax.spines.values():
+			spine.set_visible(False)
 
-        legend_elements = [
-            patches.Patch(facecolor=color, edgecolor='none', label=label, linewidth=0.75)
-            for label, color in color_dict.items() if label in node_ranks[2]
-        ]
-        ax.legend(
-            handles=legend_elements, loc='upper center', bbox_to_anchor=(0.5, -0.05),
-            ncol=4, frameon=False
-        )
+		legend_elements = [
+			patches.Patch(facecolor=color, edgecolor='none', label=label, linewidth=0.75)
+			for label, color in color_dict.items() if label in node_ranks[2]
+		]
+		ax.legend(
+			handles=legend_elements, loc='upper center', bbox_to_anchor=(0.5, -0.05),
+			ncol=4, frameon=False
+		)
 
-        # Only execute tight_layout and show() if this function created the figure
-        if show_plot:
-            plt.tight_layout()
-            plt.show()
+		# Only execute tight_layout and show() if this function created the figure
+		if show_plot:
+			plt.tight_layout()
+			plt.show()

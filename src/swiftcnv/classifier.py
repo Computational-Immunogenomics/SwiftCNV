@@ -30,13 +30,15 @@ from collections import Counter
 from sklearn.cluster import DBSCAN
 from kneed import KneeLocator
 
+from .utils import sort_chrom_arms, get_clusters, merge_clusters
+
 
 logger = logging.getLogger('SwiftCNV')
 
 
 class MalignantClassifier:
     def __init__(self, adata, sample_key='sample', cell_type_key='cell_type', 
-                 cell_of_origin=None, sample_type_key='sample_type', outdir=None, verbose=True):
+                 cell_of_origin=None, sample_type_key='sample_type', outdir=None):
         """
         Initializes the classifier class with paths and metadata keys.
         """
@@ -45,7 +47,6 @@ class MalignantClassifier:
         self.cell_type_key = cell_type_key
         self.sample_type_key = sample_type_key
         self.outdir = outdir
-        self.verbose = verbose
 
         if self.sample_key not in self.adata.obs:
             raise ValueError(f"{sample_key} not present in adata.obs")
@@ -148,13 +149,13 @@ class MalignantClassifier:
         scores = scores[np.isfinite(scores)]
         
         if len(scores) < 2:
-            logging.warning(f"Warning: Not enough valid scores (< 2) to compute density in sample ({sample_id}). Returning 0.5")
+            logger.warning(f"Warning: Not enough valid scores (< 2) to compute density in sample ({sample_id}). Returning 0.5")
             return 0.5
             
 
         # Check if all values are identical (zero variance)
         if np.max(scores) == np.min(scores):
-            logging.warning(f"Warning: Scores have zero variance in sample ({sample_id}). Returning 0.5")
+            logger.warning(f"Warning: Scores have zero variance in sample ({sample_id}). Returning 0.5")
             return 0.5
 
 
@@ -163,7 +164,7 @@ class MalignantClassifier:
             kde = gaussian_kde(scores, bw_method=lambda k: k.scotts_factor() * 1.5)
         except np.linalg.LinAlgError:
             # Catch any remaining linear algebra errors from SciPy
-            logging.warning(f"Warning: KDE failed numerically in sample ({sample_id}). Returning 0.5")
+            logger.warning(f"Warning: KDE failed numerically in sample ({sample_id}). Returning 0.5")
             return 0.5
         
         # Create a grid across the data range with padding (simulates R's 512 points)
@@ -187,7 +188,7 @@ class MalignantClassifier:
         peak_y = peak_y[valid_peaks]
         
         if len(peak_x) < 2:
-            logging.warning(f"Warning: could not find two distinct valid peaks in ({sample_id}). Returning 0.5")
+            logger.warning(f"Warning: could not find two distinct valid peaks in ({sample_id}). Returning 0.5")
             return 0.5
             
         # Identify Normal and Tumor Peaks
@@ -198,7 +199,7 @@ class MalignantClassifier:
         normal_peak = peak_x[0]
         
         if normal_peak > 0.4:
-            logging.warning("Warning: Lowest peak is > 0.4 (likely all tumor). Returning default 0.4")
+            logger.warning("Warning: Lowest peak is > 0.4 (likely all tumor). Returning default 0.4")
             return 0.4
             
         remaining_x = peak_x[1:]
@@ -229,7 +230,7 @@ class MalignantClassifier:
         Computes dynamic neighborhood size K based on cell population.
         """
         if n_cells < 10:
-            logging.warning(f"Very few reference cells in sample (({sample_id})) Using ({n_cells}) cells as k value in KNN search.")
+            logger.warning(f"Very few reference cells in sample (({sample_id})) Using ({n_cells}) cells as k value in KNN search.")
             return n_cells
         
         # Set K to the square root of N, clamped between 10 and 90
@@ -253,16 +254,16 @@ class MalignantClassifier:
         if sample_type not in valid_sample_types:
             raise ValueError(f'Invalid sample type: {sample_type}. Please set it as "tumor" or "normal".')
 
-        logging.info(f"({sample_id}) Sample type: {sample_type}")
-        logging.info(f"({sample_id}) N. infercnv query cells: {len(query_cells)}")
-        logging.info(f"({sample_id}) N. infercnv reference cells: {len(normal_cells)}")
+        logger.info(f"({sample_id}) Sample type: {sample_type}")
+        logger.info(f"({sample_id}) N. infercnv query cells: {len(query_cells)}")
+        logger.info(f"({sample_id}) N. infercnv reference cells: {len(normal_cells)}")
 
         origin_vector = cell_of_origin
         n_malignants = sample_obs[cell_type_key].isin(origin_vector).sum()
 
         # Check if the sample is healthy (no malignant cells or very few in inferCNV query group)
         if sample_type == 'normal' or len(query_cells) < 20 or n_malignants <= 20:
-            logging.info(f"Warning: sample ({sample_id}) does not contain enough query cells (<= 20). Classified as Normal/Unknown.")
+            logger.info(f"Warning: sample ({sample_id}) does not contain enough query cells (<= 20). Classified as Normal/Unknown.")
             
             chrarms_df = cnv_mat.copy()
             chrarms_df.index.name = 'cell_id'
@@ -328,7 +329,7 @@ class MalignantClassifier:
         chrarms_df['sample'] = sample_id
 
         if len(hotspotarms) >= 4:
-            logging.info(f"({sample_id}) Nº hotspotarms: {len(hotspotarms)}")
+            logger.info(f"({sample_id}) Nº hotspotarms: {len(hotspotarms)}")
 
             # remove sexual chromosomes from hotspot arms if present
             sex_arms = ['Xp', 'Xq', 'Yp', 'Yq']
@@ -342,7 +343,7 @@ class MalignantClassifier:
             cnv_p_mat_sub_hotarms = cnv_mat[hotspotarms]
 
         else:
-            logging.warning(f"({sample_id}) Warning: No hotspot chromosome arms found! Getting hotspot arms from cells of origin only.")
+            logger.warning(f"({sample_id}) Warning: No hotspot chromosome arms found! Getting hotspot arms from cells of origin only.")
                 
             mal_cells = cell_names[sample_obs[cell_type_key].isin(cell_of_origin)]
             
@@ -360,11 +361,11 @@ class MalignantClassifier:
             fallback_hotspots = cnv_mat.columns[fallback_mask].tolist()
 
             if len(fallback_hotspots) > 0:
-                logging.info(f"({sample_id}) Found {len(fallback_hotspots)} hotspot arms from cells of origin!")
+                logger.info(f"({sample_id}) Found {len(fallback_hotspots)} hotspot arms from cells of origin!")
                 chrarms_df['hotspotarm'] = np.where(chrarms_df['chrarms'].isin(fallback_hotspots), "Yes", "No")
                 cnv_p_mat_sub_hotarms = cnv_mat[fallback_hotspots]
             else:
-                logging.info(f"({sample_id}) No additional hotspot arms found. Using all arms.")
+                logger.info(f"({sample_id}) No additional hotspot arms found. Using all arms.")
                 chrarms_df['hotspotarm'] = "No"
                 cnv_p_mat_sub_hotarms = cnv_mat
 
@@ -400,11 +401,11 @@ class MalignantClassifier:
         # At least 4 hostpot chr arms required for the correlation
         min_arms_required = 4 
         if len(hotspotarms) >= min_arms_required:
-            logging.info(f"({sample_id}) Computing tumor correlation using {len(hotspotarms)} arms.")
+            logger.info(f"({sample_id}) Computing tumor correlation using {len(hotspotarms)} arms.")
             matrix_to_run = cnv_p_mat_sub_hotarms
             ref_signature = matrix_to_run.loc[ref_cells_mal].mean(axis=0)
         else:
-            logging.info(f"({sample_id}) Computing correlation on the full matrix.")
+            logger.info(f"({sample_id}) Computing correlation on the full matrix.")
             matrix_to_run = cnv_mat
             ref_signature = matrix_to_run.loc[ref_cells_mal].mean(axis=0)
 
@@ -431,7 +432,7 @@ class MalignantClassifier:
             ref_signature_normal = cnv_p_mat_sub_hotarms.loc[ref_cells_norm].mean(axis=0)
 
         else: #if there are very few normal cells, set a reference signature of 0 in all Chr arms
-            logging.warning(f"Warning: Not enough normal reference cells in sample ({sample_id}) (< 10) to calculate a signature. Returning a default vector.")
+            logger.warning(f"Warning: Not enough normal reference cells in sample ({sample_id}) (< 10) to calculate a signature. Returning a default vector.")
             # Creates a series of 0s matched to the arm names
             ref_signature_normal = pd.Series(0.0, index=cnv_p_mat_sub_hotarms.columns)
 
@@ -498,7 +499,7 @@ class MalignantClassifier:
             dists_norm, _ = nn_norm.kneighbors(pca_mat_l2)
             cos_dist_norm = np.mean((dists_norm**2) / 2, axis=1)
         else:
-            logging.warning(f"({sample_id}) Warning: Very few normal reference cells (< 10). Returning default distance vector.")
+            logger.warning(f"({sample_id}) Warning: Very few normal reference cells (< 10). Returning default distance vector.")
             cos_dist_norm = np.ones(pca_mat_l2.shape[0])
 
         # Cosine Ratio metric calculation
@@ -527,11 +528,11 @@ class MalignantClassifier:
             raise KeyError(f'{obsm_layer} not present in adata.obsm!')
 
         unique_samples = self.adata.obs[self.sample_key].unique()
-        logging.info(f"Calculating scores across {len(unique_samples)} samples.")
+        logger.info(f"Calculating scores across {len(unique_samples)} samples.")
 
         if n_jobs == -1:
             n_jobs = os.cpu_count() or 1 
-        logging.info(f"Using {n_jobs} parallel processes.")
+        logger.info(f"Using {n_jobs} parallel processes.")
         
         all_hotspots = []
         all_corrs = []
@@ -569,16 +570,16 @@ class MalignantClassifier:
                     all_centroids.append(sample_results['centroids_dist'])
                     
                 except Exception as e:
-                    logging.error(f"Failed scoring on sample ({sample_id}). Error: {str(e)}")
+                    logger.error(f"Failed scoring on sample ({sample_id}). Error: {str(e)}")
                     raise e
                 
-        logging.info("Concatenating parallelized sample outputs...")
+        logger.info("Concatenating parallelized sample outputs...")
         self.master_hotspotarms_df = pd.concat(all_hotspots, axis=0, ignore_index=True)
         self.master_corr_df = pd.concat(all_corrs, axis=0)
         self.master_cosine_df = pd.concat(all_cosines, axis=0)
         self.master_centroids_df = pd.concat(all_centroids, axis=0)
         
-        logging.info("Successfully executed and aggregated metrics for all samples.")
+        logger.info("Successfully executed and aggregated metrics for all samples.")
         
 
     def plot_cnv_chr_arms_pdf(self, outdir):
@@ -593,7 +594,7 @@ class MalignantClassifier:
         
         min_mad = 0.005
 
-        logging.info(f"Generating hotspot arms pdf report for {len(sample_ids)} samples...")
+        logger.info(f"Generating hotspot arms pdf report for {len(sample_ids)} samples...")
 
         # Initialize PdfPages to create a multi-page document
         with PdfPages(filename) as pdf:
@@ -692,7 +693,7 @@ class MalignantClassifier:
                 pdf.savefig(fig, bbox_inches='tight')
                 plt.close(fig)
                 
-        logging.info(">> Seaborn hotspot arms report saved!")
+        logger.info(">> Seaborn hotspot arms report saved!")
 
 
     def get_malignant_classif(self, groupby=None):
@@ -777,7 +778,7 @@ class MalignantClassifier:
                 if "arrow" in str(self.adata.obs[col].dtype).lower():
                     self.adata.obs[col] = self.adata.obs[col].astype(object)
 
-        logging.info(">> Successfully computed multi-tier malignant scores and classifications.")
+        logger.info(">> Successfully computed multi-tier malignant scores and classifications.")
 
 
     def get_malignant_score(self):
@@ -807,15 +808,15 @@ class MalignantClassifier:
         x_min = self.adata.X.min()
 
         if x_max > 50 and x_min >= 0:
-            logging.info("Matrix values are raw counts")
+            logger.info("Matrix values are raw counts")
             data_type = 'counts'
 
         else:
             if x_min < 0:
-                logging.info("Matrix is log scaled")
+                logger.info("Matrix is log scaled")
                 data_type = 'scaled log-counts'
             else:
-                logging.info("Matrix is log-transformed but not scaled")
+                logger.info("Matrix is log-transformed but not scaled")
                 data_type = 'log-counts'
         
         if data_type == "counts":
@@ -831,7 +832,7 @@ class MalignantClassifier:
         use_hvg = "highly_variable" in self.adata.var
         sc.pp.pca(self.adata, mask_var="highly_variable")
 
-        logging.info('X_pca embbeding generated.')
+        logger.info('X_pca embbeding generated.')
         return self.adata
 
 
@@ -854,14 +855,14 @@ class MalignantClassifier:
 
 
     def knn_malignant_classification(self, sample_key, sample_type_key, embedding_key='X_umap'):
-        logging.info(">> Computing KNN classification by sample...")
+        logger.info(">> Computing KNN classification by sample...")
 
         if embedding_key is None or embedding_key not in self.adata.obsm:
             if 'X_pca' not in self.adata.obsm:
-                logging.info('Embbeding key not in adata.obs, generating PCA embbeding.')
+                logger.info('Embbeding key not in adata.obs, generating PCA embbeding.')
                 self.generate_pca()
             else:
-                logging.info('X_pca found in adata.obs, running knn classification from it.')
+                logger.info('X_pca found in adata.obs, running knn classification from it.')
 
             embedding_key = 'X_pca'
             
@@ -887,18 +888,18 @@ class MalignantClassifier:
                 sample_votes = [self.get_majority_vote(row) for row in nn_identities]
                 self.adata.obs.loc[sample_mask, 'knn_classif'] = sample_votes
 
-                logging.info(f"KNN completed for sample: {sample_id} using {k_val} neighbours.")
+                logger.info(f"KNN completed for sample: {sample_id} using {k_val} neighbours.")
 
             else:
-                logging.warning(f"{sample_id} has less than 50 cells. KNN will not be computed and cells will be classified as their CNV state.")
+                logger.warning(f"{sample_id} has less than 50 cells. KNN will not be computed and cells will be classified as their CNV state.")
                 CNV_state = self.adata.obs.loc[sample_mask, 'CNV_classif']
                 self.adata.obs.loc[sample_mask, 'knn_classif'] = CNV_state
 
-        logging.info(">> KNN classification successfully ran")
+        logger.info(">> KNN classification successfully ran")
 
 
     def final_classification(self):
-        logging.info(f">> Building final classification.")
+        logger.info(f">> Building final classification.")
 
         if 'CNV_classif' not in self.adata.obs.columns:
             raise ValueError(f"CNV classification column not found. Run get_malignant_score first.")
@@ -1016,7 +1017,7 @@ class MalignantClassifier:
         and label outliers. Creates a True/False flag column.
         """
 
-        logging.info(f">> Running sample-wise DBSCAN outlier detection grouped by '{groupby}'...")
+        logger.info(f">> Running sample-wise DBSCAN outlier detection grouped by '{groupby}'...")
         
         target_classes = ['Malignant-high confidence', 'Malignant-like', 'Malignant'] 
         
@@ -1068,10 +1069,10 @@ class MalignantClassifier:
                 outlier_cells_idx = subset_indices[outlier_mask]
                 all_outlier_indices.extend(outlier_cells_idx)
                 
-                logging.info(f"  - {sample_id}: DBSCAN complete (eps: {apex:.4f}, minPts: {k_val}). Found {len(outlier_cells_idx)} outliers.")
+                logger.info(f"  - {sample_id}: DBSCAN complete (eps: {apex:.4f}, minPts: {k_val}). Found {len(outlier_cells_idx)} outliers.")
                 
             elif len(subset_indices) > 0:
-                logging.warning(f"  - {sample_id}: Warning - Too few malignant cells ({len(subset_indices)}). Setting all to outliers.")
+                logger.warning(f"  - {sample_id}: Warning - Too few malignant cells ({len(subset_indices)}). Setting all to outliers.")
                 all_outlier_indices.extend(subset_indices)
 
         # Apply the True/False flags and update classifications
@@ -1087,14 +1088,7 @@ class MalignantClassifier:
             
         self.adata.obs[classif_col] = self.adata.obs[classif_col].astype('category')
         
-        logging.info(">> Sample-wise DBSCAN outlier removal done.")
-
-        # print a quick summary
-        if self.verbose:
-            counts = self.adata.obs["malignant_classif"].value_counts()
-            logging.info(">> Final Classification Summary:")
-            for status, count in counts.items():
-                logging.info(f"   - {status}: {count} cells")
+        logger.info(">> Sample-wise DBSCAN outlier removal done.")
 
         # format adata properly
         self.adata.obs['CNV_classif'] = self.adata.obs['CNV_classif'].astype('category')
@@ -1105,7 +1099,385 @@ class MalignantClassifier:
         self.adata.var['chr_arm'] = self.adata.var['chr_arm'].astype('category')
 
 
-    def run_classifiation(self, n_jobs=1, embedding_key='X_umap', report=True):
+    def plot_cnv_by_sample(self, group_key='sample', cnv_key="cnv_mat_arms", 
+        color_by=None, split_by="malignant_classif", continuous_var="malignant_score",
+        legend_titles=None, highlight_arms=None, cluster_cells=True, figsize=(20, 12), 
+        cmap="RdBu_r", score_cmap="Reds", vmin=None, vmax=None, vcenter=0, threads=-1,
+        outdir=None): 
+
+        logging.info(">> Plotting a CNV Heatmap by Sample...")
+
+        if isinstance(color_by, str):
+            color_vars = [color_by]
+        elif isinstance(color_by, (list, tuple)):
+            color_vars = list(color_by)
+        else:
+            color_vars = []
+            
+        if legend_titles is None:
+            legend_titles = {}
+            
+        if highlight_arms is None:
+            highlight_arms = {}
+
+        # Prevent continuous variables from being treated as categorical
+        if continuous_var in color_vars:
+            color_vars.remove(continuous_var)
+
+        unique_samples = self.adata.obs[group_key].unique()
+        
+        # Custom color mappings for categorical variables
+        my_colors = {
+            'Malignant-high confidence': '#cd5555',
+            'Malignant-like': '#ee9572',
+            'Normal': '#b2dfee',
+            'Unknown': '#b3b3b3'
+        }
+        knn_colors = {'Normal': '#b2dfee', 'Malignant': '#cd5555'}
+        
+        # Initialize PDF object if saving
+
+        filename = os.path.join(outdir, "CNV_heatmaps_samples.pdf")
+
+        pdf = PdfPages(filename) if filename else None 
+        
+        for sample in unique_samples:
+            
+            # Subset the main anndata object
+            sample_adata = self.adata[self.adata.obs[group_key] == sample].copy()
+            
+            if cnv_key in sample_adata.obsm:
+                nested_cnv = sample_adata.obsm[cnv_key]
+                if isinstance(nested_cnv, pd.DataFrame):
+                    sample_adata.obsm[cnv_key] = nested_cnv.loc[sample_adata.obs_names].copy()
+                else:
+                    sample_adata.obsm[cnv_key] = nested_cnv[sample_adata.obs_names].copy()
+            else:
+                raise KeyError(f"'{cnv_key}' not found in adata.obsm for sample '{sample}'.")
+    
+            # Extract matrix & chromosome metadata
+            cnv_adata = sample_adata.obsm[cnv_key]
+            mat = cnv_adata.values
+            if sp.issparse(mat):
+                mat = mat.toarray()
+
+            chromosomes = sort_chrom_arms(cnv_adata.columns)
+            n_total_cells = len(sample_adata)
+
+            # Get highlighted arms for this specific sample
+            sample_marked_arms = highlight_arms.get(sample, [])
+
+            # Continuous variable setup (CUSTOM HALF-WHITE / HALF-REDS COLORMAP)
+            has_continuous = (continuous_var is not None) and (continuous_var in sample_adata.obs.columns)
+            if has_continuous:
+                score_vals_all = sample_adata.obs[continuous_var].values.astype(float)
+                score_vmin = 0.0
+                score_vmax = max(1.0, np.nanmax(score_vals_all))
+                
+                score_norm = mcolors.Normalize(vmin=score_vmin, vmax=score_vmax)
+                
+                base_cm = plt.colormaps[score_cmap] if isinstance(score_cmap, str) else score_cmap
+                n_samples = 256
+                half_n = n_samples // 2
+                
+                white_part = np.tile(np.array([1.0, 1.0, 1.0, 1.0]), (half_n, 1))
+                reds_part = base_cm(np.linspace(0.0, 1.0, n_samples - half_n))
+                
+                score_cm = mcolors.ListedColormap(np.vstack((white_part, reds_part)), name="WhiteToReds")
+
+            # Group and Cluster all cells based on split_by
+            cell_groups = {}
+            if split_by and split_by in sample_adata.obs.columns:
+                raw_vals = sample_adata.obs[split_by].values
+                present_vals = [v for v in pd.unique(raw_vals) if pd.notna(v)]
+                
+                if split_by in ['CNV_classif', 'malignant_classif']:
+                    desired_order = ['Normal', 'Malignant-high confidence', 'Malignant-like', 'Unknown']
+                    unique_splits = [k for k in desired_order if k in present_vals]
+                    unique_splits += [v for v in present_vals if v not in unique_splits]
+                elif split_by == 'knn_classif':
+                    unique_splits = [k for k in knn_colors.keys() if k in present_vals]
+                    unique_splits += [v for v in present_vals if v not in unique_splits]
+                else:
+                    unique_splits = sorted(present_vals)
+                
+                for val in unique_splits:
+                    group_mask = raw_vals == val
+                    group_idx = np.where(group_mask)[0]
+                    if len(group_idx) == 0:
+                        continue
+                    group_mat = mat[group_idx, :]
+                    
+                    if cluster_cells and len(group_idx) > 1:
+                        order, _ = get_clusters(group_mat, threads=threads)
+                    else:
+                        order = np.arange(len(group_idx))
+                        
+                    cell_groups[val] = {
+                        'mat': group_mat[order, :],
+                        'rows': group_idx[order]
+                    }
+            else:
+                all_idx = np.arange(n_total_cells)
+                if cluster_cells and len(all_idx) > 1:
+                    order, _ = get_clusters(mat, threads=threads)
+                else:
+                    order = all_idx
+                cell_groups['All Cells'] = {
+                    'mat': mat[order, :],
+                    'rows': all_idx[order]
+                }
+
+            # Global Color Palette Setup
+            palettes = ["Set3", "tab20", 'Paired'] 
+            all_legends_data = []
+            global_group_colors = {}
+
+            if color_vars:
+                for idx, var in enumerate(color_vars):
+                    if var not in sample_adata.obs.columns:
+                        continue # Skip missing columns defensively
+                        
+                    unique_vals = sorted([v for v in pd.unique(sample_adata.obs[var]) if pd.notna(v)])
+                    has_nan = sample_adata.obs[var].isna().any()
+                    
+                    if var in ['CNV_classif', 'malignant_classif']:
+                        group_to_color = {g: mcolors.to_rgba(my_colors.get(g, '#CCCCCC')) for g in unique_vals}
+                    elif var == 'knn_classif':
+                        group_to_color = {g: mcolors.to_rgba(knn_colors.get(g, '#CCCCCC')) for g in unique_vals}
+                    else:
+                        cat_cmap = plt.colormaps[palettes[idx % len(palettes)]]
+                        group_to_color = {g: cat_cmap(i % len(cat_cmap.colors)) for i, g in enumerate(unique_vals)}
+                    
+                    if has_nan:
+                        group_to_color['nan'] = mcolors.to_rgba('#D3D3D3')
+                        if 'nan' not in unique_vals:
+                            unique_vals.append('nan')
+                    
+                    global_group_colors[var] = group_to_color
+                    handles = [patches.Patch(color=group_to_color[g], label=str(g)) for g in unique_vals]
+                    
+                    display_title = legend_titles.get(var, var)
+                    all_legends_data.append((handles, display_title))
+
+            # Heatmap color scale limits
+            if vmin is None or vmax is None:
+                p1, p99 = np.percentile(mat.ravel(), [1, 99])
+                auto_lim = max(abs(p1), abs(p99))
+                auto_lim = max(auto_lim, 0.05)
+                vmin, vmax = -auto_lim, auto_lim
+
+            # Build Dynamic GridSpec Layout
+            split_gap_height = max(1, int(0.008 * n_total_cells)) 
+            chr_height = max(1, int(0.03 * n_total_cells))
+
+            height_ratios = []
+            group_keys = list(cell_groups.keys())
+            for i, val in enumerate(group_keys):
+                height_ratios.append(len(cell_groups[val]['rows']))
+                if i < len(group_keys) - 1:
+                    height_ratios.append(split_gap_height)
+                    
+            height_ratios.append(chr_height)
+            n_rows = len(height_ratios)
+
+            if has_continuous:
+                width_ratios = [5, 0.15, 45, 0.15, 1, 1, 10] 
+                col_left_sbar = 0
+                col_heatmap = 2
+                col_right_sbar = 4
+                col_right_panel = 6
+            else:
+                width_ratios = [5, 0.15, 45, 1, 10]
+                col_left_sbar = 0
+                col_heatmap = 2
+                col_right_sbar = None
+                col_right_panel = 4
+
+            fig = plt.figure(figsize=figsize)
+            gs = GridSpec(
+                n_rows, len(width_ratios), hspace=0.005, wspace=0.005,
+                height_ratios=height_ratios, width_ratios=width_ratios
+            )
+
+            norm = mcolors.TwoSlopeNorm(vmin=vmin, vcenter=vcenter, vmax=vmax)
+            
+            # Render Sub-Heatmaps for each classification split
+            curr_row = 0
+            unique_chroms = np.unique(chromosomes)
+            chrom_to_int = {c: i for i, c in enumerate(unique_chroms)}
+            chrom_ints = np.array([chrom_to_int[c] for c in chromosomes])
+
+            for i, val in enumerate(group_keys):
+                g_data = cell_groups[val]
+                n_group_cells = len(g_data['rows'])
+                
+                # Main CNV Heatmap
+                ax_obs = fig.add_subplot(gs[curr_row, col_heatmap])
+                im = ax_obs.imshow(g_data['mat'], aspect="auto", cmap=cmap, norm=norm, interpolation="none")
+                ax_obs.set_xticks([]); ax_obs.set_yticks([])
+
+                # Categorical Left Sidebars
+                if color_vars:
+                    gs_obs_sbar = GridSpecFromSubplotSpec(1, len(color_vars), subplot_spec=gs[curr_row, col_left_sbar], wspace=0.15)
+                    for c_idx, var in enumerate(color_vars):
+                        if var not in global_group_colors: continue # Skip if skipped above
+                        
+                        ax_obs_var = fig.add_subplot(gs_obs_sbar[0, c_idx])
+                        obs_c_mat = np.zeros((n_group_cells, 1, 4))
+                        var_vals = sample_adata.obs[var].values[g_data['rows']]
+                        
+                        for r_idx, v in enumerate(var_vals):
+                            lookup_v = 'nan' if pd.isna(v) else v
+                            obs_c_mat[r_idx, 0, :] = global_group_colors[var].get(lookup_v, mcolors.to_rgba('#CCCCCC'))
+                        
+                        ax_obs_var.imshow(obs_c_mat, aspect="auto", interpolation="none")
+                        ax_obs_var.set_yticks([])
+                        
+                        if i == len(group_keys) - 1:
+                            ax_obs_var.set_xticks([0])
+                            display_title = legend_titles.get(var, var)
+                            ax_obs_var.set_xticklabels([display_title], rotation=90, ha="center", va="top", fontsize=9)
+                            ax_obs_var.tick_params(axis="x", length=0, pad=2)
+                        else:
+                            ax_obs_var.set_xticks([])
+
+                        for spine in ax_obs_var.spines.values():
+                            spine.set_visible(True); spine.set_color("black"); spine.set_linewidth(1.0)
+
+                # Continuous Right Sidebar
+                if has_continuous:
+                    ax_score_sbar = fig.add_subplot(gs[curr_row, col_right_sbar])
+                    group_scores = sample_adata.obs[continuous_var].values[g_data['rows']].astype(float)
+                    
+                    score_rgba = np.zeros((n_group_cells, 1, 4))
+                    for r_idx, s_val in enumerate(group_scores):
+                        if pd.isna(s_val):
+                            score_rgba[r_idx, 0, :] = mcolors.to_rgba('#CCCCCC')
+                        else:
+                            score_rgba[r_idx, 0, :] = score_cm(score_norm(s_val))
+                            
+                    ax_score_sbar.imshow(score_rgba, aspect="auto", interpolation="none")
+                    ax_score_sbar.set_yticks([])
+                    ax_score_sbar.set_xticks([])
+
+                    for spine in ax_score_sbar.spines.values():
+                        spine.set_visible(True); spine.set_color("black"); spine.set_linewidth(1.0)
+                
+                # Chromosome boundary lines
+                for b in range(1, len(chromosomes)):
+                    if chromosomes[b].replace("chr", "")[:-1] != chromosomes[b - 1].replace("chr", "")[:-1]:
+                        ax_obs.axvline(b - 0.5, color="#121212", linewidth=1.25, alpha=0.8, zorder=5)
+                    else:
+                        ax_obs.axvline(b - 0.5, color="#333333", linewidth=1.0, alpha=0.8, zorder=5)
+                        
+                curr_row += 2
+
+            # Chromosome Track at bottom
+            chr_row_idx = n_rows - 1
+            ax_chr = fig.add_subplot(gs[chr_row_idx, col_heatmap])
+            ax_chr.set_xlim(-0.5, len(chromosomes) - 0.5)
+            ax_chr.set_ylim(-0.5, 0.5)
+            ax_chr.axis("off")
+
+            for chrom in unique_chroms:
+                positions = np.where(chrom_ints == chrom_to_int[chrom])[0]
+                mid = positions[len(positions) // 2]
+                chrom_label = chrom.replace("chr", "").replace("M", "")
+                
+                # Check if this arm/chromosome is marked
+                is_marked = (chrom in sample_marked_arms or 
+                            chrom.replace("chr", "") in sample_marked_arms or 
+                            chrom_label in sample_marked_arms)
+                
+                font_weight = "bold" if is_marked else "normal"
+                
+                ax_chr.text(
+                    mid, 0.3, chrom_label, ha="center", va="top", rotation=90, 
+                    fontsize=11, fontweight=font_weight
+                )
+
+            # Legends and Colorbars Panel
+            heatmap_span_rows = chr_row_idx
+            
+            gs_right = GridSpecFromSubplotSpec(
+                2, 1, 
+                subplot_spec=gs[0:heatmap_span_rows, col_right_panel], 
+                height_ratios=[1.2, 3.8],
+                hspace=0.04
+            )
+            
+            # Colorbars
+            if has_continuous:
+                gs_cbars_outer = GridSpecFromSubplotSpec(1, 2, subplot_spec=gs_right[0, 0], width_ratios=[1.5, 8.5])
+                gs_cbars = GridSpecFromSubplotSpec(2, 1, subplot_spec=gs_cbars_outer[0, 0], height_ratios=[1, 1], hspace=0.45)
+                
+                # CNV values Colorbar
+                ax_cbar1 = fig.add_subplot(gs_cbars[0, 0])
+                fig.colorbar(im, cax=ax_cbar1)
+                ax_cbar1.set_title("CNV values", fontsize=11, pad=4, loc="left")
+                ax_cbar1.tick_params(labelsize=8)
+                ax_cbar1.yaxis.set_ticks_position("right")
+
+                # Continuous Score Colorbar 
+                ax_cbar2 = fig.add_subplot(gs_cbars[1, 0])
+                sm = plt.cm.ScalarMappable(cmap=score_cm, norm=score_norm)
+                sm.set_array([])
+                fig.colorbar(sm, cax=ax_cbar2)
+                cbar_title = legend_titles.get(continuous_var, continuous_var)
+                ax_cbar2.set_title(cbar_title, fontsize=11, pad=4, loc="left")
+                ax_cbar2.tick_params(labelsize=8)
+                ax_cbar2.yaxis.set_ticks_position("right")
+            else:
+                gs_cbar = GridSpecFromSubplotSpec(1, 2, subplot_spec=gs_right[0, 0], width_ratios=[1.2, 8.8])
+                ax_cbar = fig.add_subplot(gs_cbar[0, 0])
+                fig.colorbar(im, cax=ax_cbar)
+                ax_cbar.set_title("CNV values", fontsize=9, pad=3, loc="left")
+                ax_cbar.tick_params(labelsize=8)
+                ax_cbar.yaxis.set_ticks_position("right")
+
+            # Categorical Legends
+            ax_leg = fig.add_subplot(gs_right[1, 0])
+            ax_leg.axis("off")
+
+            leg_y = 1.0 
+            for idx, (handles, var_title) in enumerate(all_legends_data):
+                leg = ax_leg.legend(
+                    handles=handles, title=var_title, loc="upper left", bbox_to_anchor=(0.0, leg_y),
+                    ncol=1, fontsize=10, title_fontsize=11, frameon=False,
+                    handlelength=1.0, handleheight=1.0, columnspacing=0.8,
+                    labelspacing=0.4, borderpad=0.1, handletextpad=0.3, borderaxespad=0.0
+                )
+                
+                leg._legend_box.align = "left" 
+                
+                ax_leg.add_artist(leg)
+                leg_y -= (len(handles) * 0.035) + 0.06
+
+            fig.suptitle(f"Sample: {sample} | {n_total_cells} cells", fontsize=13, y=0.95)
+    
+            if pdf:
+                pdf.savefig(fig, bbox_inches='tight', pad_inches=0.5)
+            else:
+                plt.show()
+                
+            plt.close(fig)
+
+        # Close PDF object after the loop finishes
+        if pdf:
+            pdf.close()
+
+        logging.info(">> CNV Heatmap by Sample succesfully generated!")
+
+
+    def run_classification(self, n_jobs=1, embedding_key='X_umap', report=True, verbose=True):
+
+        if verbose:
+            logger.setLevel(logging.INFO)
+        else:
+            logger.setLevel(logging.WARNING)
+
+        logger.info(">> Starting malignant classification...")
 
         self.get_corr_scores(n_jobs=n_jobs)
         self.get_malignant_classif(groupby=self.sample_key)
@@ -1116,6 +1488,20 @@ class MalignantClassifier:
 
         if report:
             self.plot_cnv_chr_arms_pdf(outdir=self.outdir)
+            
+            # plotting CNV heatmaps
+            hotspotarms_dict = (self.master_hotspotarms_df.loc[self.master_hotspotarms_df['hotspotarm'] == 'Yes']
+                .groupby('sample')['chrarms']
+                .agg(lambda x: x.unique())
+                .to_dict()
+                )
+
+            titles_dict = {self.cell_type_key: 'Cell type', 'knn_classif': 'KNN classif.', 'CNV_classif': 'CNV classif.', 'CNV_values': 'CNV values', 'malignant_score': 'Malignant score', 'malignant_classif': 'Malignant classif.' }
+
+            self.plot_cnv_by_sample(group_key=self.sample_key, color_by=['malignant_score', self.cell_type_key, 'CNV_classif', 'knn_classif', 'malignant_classif'], split_by='malignant_classif', continuous_var="malignant_score",
+                            legend_titles=titles_dict, highlight_arms= hotspotarms_dict, outdir=self.outdir, threads=n_jobs)
+
+        logger.info(">> Malignant classification successfully done!")
 
         return self.adata
 
