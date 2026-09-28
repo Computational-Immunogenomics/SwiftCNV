@@ -123,5 +123,5 @@ if `--hmm` was specified HMM segmentation outputs will go to a `hmm/` directory:
 - `tumor_subclusters.tsv.gz`: subcluster labels for the state HMM clustering if `--hmm-by=subcluster` (default)
 
 <br>
-<img src="https://raw.githubusercontent.com/Computational-Immunogenomics/SwiftCNV/main/docs/_static/images/swiftcnv_heatmap.png" alt="swiftcnv_heatmap" align="center" width="750">
+<img src="https://raw.githubusercontent.com/Computational-Immunogenomics/SwiftCNV/main/docs/_static/images/swiftcnv_heatmap.png" alt="swiftcnv_heatmap" align="center" width="850">
 
