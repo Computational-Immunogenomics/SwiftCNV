@@ -106,70 +106,6 @@ swiftcnv \
     --hmm
 ```
 
-### Using SwiftCNV in a script or notebook
-
-```python
-import logging
-import swiftcnv as cnv
-from swiftcnv.data import Qian2020_Ovarian
-
-# Enable INFO level logging for verbosity
-logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(name)s: %(message)s')
-
-# Load example dataset
-adata = Qian2020_Ovarian()
-```
-
-For running manually, first create a SwiftCNV object with the input counts matrix (will be converted to scipy.sparse.csr_matrix). `cell_order` pandas DataFrame has columns `cell_name`, `reference` and optionally `sample`. `gene_order` pandas DataFrame has columns `gene`, `chr`, `arm`, `chr_arm`, `start`, `end`. These can be built from files with the helpers `get_cell_order()` and `get_gene_order()`.
-
-```python
-counts = adata.X
-counts, cell_order = cnv.get_cell_order(cells_file, counts, adata.obs_names, column='reference', sample_col='sample')
-counts, gene_order = cnv.get_gene_order(counts, adata.var_names, gtf_file, exclude_immune=True, sex_chr=False)
-obj = cnv.SwiftCNV(counts, cell_order, gene_order)
-```
-
-Run the CNV estimation with advanced parameters. Gene smoothing averages the value of each gene over a window of genes: `bases_window` in MB and `genes_window` in number of genes. If both are defined the shorter window to each direction applies, to avoid smoothing over distant genes and to increase resolution if many genes are available. If both are None (default) the windows are set to 30MB and 1% of the total remaining genes (with a minimum of 51).
-
-```python
-# These are the default parameters
-cnv_scores = obj.run(
-    min_cells_per_gene=3,    # Filter genes expressed in less than these cells
-    cutoff=0.1,              # Filter genes below this normalized expression
-    bound_sd_amplifier=3.0,  # Bound values to these times the std of the matrix (in log scale)
-    substract_reference_by_sample=False,  # Substract the mean of the reference by each sample
-    smooth_by='arm',         # Stratify gene smoothing by 'chr' or 'arm'
-    bases_window=None,       # Window in MB for smoothing
-    genes_window=None,       # Window in number of genes for smoothing
-    denoise=True,            # Denoise low values that are likely noise
-    noise_filter=0.1,        # Threshold to consider noise (|value| < noise_filter)
-    sd_amplifier=1.0,        # Threshold to consider noise (|value| < std * sd_amplifier)
-    noise_logistic=True,     # Smooth denoised values with a logistic function instead of a hard filter to zero
-    final_cap=1.5,           # Hard clip to [-cap, cap] to the final values
-    inv_log=False,           # Apply inverse log(x + 1) to the returned matrix (centered around 1 instead of 0)
-)
-```
-
-`run_from_adata` is a helper function similar to the CLI. Additional arguments are passed to the main analysis (`SwiftCNV.run`).
-
-```python
-adata = cnv.run_from_adata(
-    adata,
-    gtf_path='/path/to/gene_annotations.gtf.gz',
-    reference_col='cell_type',
-    reference_vals=['T-cell', 'Macrophages'],  
-    sample_col='sample',
-    read_X=True,
-    exclude_immune=True,
-    cutoff=0.15,
-    genes_window=75,
-    min_cells_per_gene=5,
-)
-```
-
-If an AnnData object is provided directly as input, the function returns a new AnnData object with the cnv_scores matrix added to `adata.obsm["cnv_mat"]`. Therefore here `output_dir` is optional.
-
-
 ## Outputs
 
 Output files are placed under `-o`/`--output` (or `output_dir` if defined). SwiftCNV generates 3 main files:
@@ -185,3 +121,9 @@ if `--hmm` was specified HMM segmentation outputs will go to a `hmm/` directory:
 - `cnv_states.tsv.gz`: DataFrame containing 3-states labels matrix by subcluster, cell or sample, depending on `--hmm-by`
 - `cnv_states.png`: Heatmap plot with the found HMM states
 - `tumor_subclusters.tsv.gz`: subcluster labels for the state HMM clustering if `--hmm-by=subcluster` (default)
+
+<br>
+<figure align="center">
+<img src="https://raw.githubusercontent.com/Computational-Immunogenomics/SwiftCNV/main/docs/_static/images/swiftcnv_heatmap.png" alt="swiftcnv_heatmap" align="center" width="650">
+</figure>
+
