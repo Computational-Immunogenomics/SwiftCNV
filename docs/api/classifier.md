@@ -1,11 +1,10 @@
 # Malignant Classifier
 
 ```{eval-rst}
-.. module:: classifier
-   :no-index:
+.. currentmodule:: swiftcnv.classifier
 
 .. autosummary::
    :toctree: generate
 
-   MalignantClassifier
-   MalignantClassifier.run_classification
+   ~swiftcnv.classifier.MalignantClassifier
+   ~swiftcnv.classifier.MalignantClassifier.run_classification
