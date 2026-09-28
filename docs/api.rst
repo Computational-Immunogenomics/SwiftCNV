@@ -13,3 +13,4 @@ API
    api/swiftcnv
    api/downstream
    api/plotting
+   api/classifier

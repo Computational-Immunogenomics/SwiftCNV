@@ -39,9 +39,24 @@ logger = logging.getLogger('SwiftCNV')
 class MalignantClassifier:
     def __init__(self, adata, sample_key='sample', cell_type_key='cell_type', 
                  cell_of_origin=None, sample_type_key='sample_type', outdir=None):
-        """
-        Initializes the classifier class with paths and metadata keys.
-        """
+        '''Malignant cell classifier.
+
+        Parameters
+        ----------
+        adata : anndata.AnnData
+            Anndata object used as input for SwiftCNV
+	    sample_key : str, default 'sample'
+		    Column in `adata.obs` defining sample identifiers.
+        cell_type_key : str, default 'cell_type'
+            Key of the obs layer where cell annotations are stored.
+        cell_of_origin : str or list, default None
+            Cell type(s) of origin of the tumor cells.
+        sample_type_key : str, default 'sample_type'
+		    Column in `adata.obs` where sample type is defined (either "normal" or "tumor").
+        outdir : str, default None
+            Path where the output files will be stored.
+        '''
+
         self.adata = adata 
         self.sample_key = sample_key
         self.cell_type_key = cell_type_key
@@ -522,8 +537,14 @@ class MalignantClassifier:
 
     def get_corr_scores(self, n_jobs=-1, obsm_layer='cnv_mat_arms'):
         """
-        Calculates scores for all the samples in the adata
+        Calculates the three malignancy scores for all the samples in the adata.
+
+        Parameters
+	    ----------
+        n_jobs : int, default -1
+        obsm_layer: str, default 'cnv_mat_arms'
         """
+
         if obsm_layer not in self.adata.obsm:
             raise KeyError(f'{obsm_layer} not present in adata.obsm!')
 
@@ -1470,8 +1491,30 @@ class MalignantClassifier:
         logging.info(">> CNV Heatmap by Sample succesfully generated!")
 
 
-    def run_classification(self, n_jobs=1, embedding_key='X_umap', report=True, verbose=True):
+    def run_classification(self, n_jobs=2, embedding_key='X_umap', report=True, verbose=True):
+        '''
+        Wrapper function to run malignant classification.
 
+        Parameters
+        ----------
+        n_jobs : int, default=2
+            Number of parallel jobs/threads to use.
+        embedding_key : str, default='X_umap'
+            Key in `adata.obsm` representing the lower-dimensional embedding space 
+            used for KNN classification.
+        report : bool, default=True
+            Whether to generate and save PDF visual reports, including chromosome arm 
+            CNV plots and sample-level heatmaps.
+        verbose : bool, default=True
+            If True, sets the logger output level to `logging.INFO`. If False, sets 
+            it to `logging.WARNING`.
+
+        Returns
+        -------
+        anndata.AnnData
+            The updated AnnData object (`self.adata`) containing classification results.
+        '''
+        
         if verbose:
             logger.setLevel(logging.INFO)
         else:

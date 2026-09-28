@@ -11,3 +11,6 @@
    plot_cnv_multi
    plot_cnv_summary
    plot_cnv_from_adata
+   plot_cnv_by_sample
+   plot_CNV_density
+   plot_alluvial
