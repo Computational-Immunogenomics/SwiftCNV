@@ -65,7 +65,7 @@ SwiftCNV can be run from the command line from a h5ad file, but can also be impo
 | `--bases-window` | Window size for smoothing in MB. Default: 30MB if <genes-window> is also not defined |
 | `-t`, `--threads` | Number of threads to use in parallel processes (HMM segmentation and clustering) |
 
-Reference cells can be specified using a TSV file with two columns, cell_name and reference, where the reference column contains TRUE or FALSE to indicate whether each cell is used as a reference. Alternatively, reference cells can be specified by providing the column in adata.obs containing the cell type annotations (--reference-col) and which ones should be used as reference (--reference-value).  Finally, the column identifying the samples must be specified.
+Reference cells can be specified using a TSV file with two columns, cell_name and reference, where the reference column contains TRUE or FALSE to indicate whether each cell is used as a reference. Alternatively, reference cells can also be specified by providing the column in adata.obs containing the cell type annotations (--reference-col) and which ones should be used as reference (--reference-value). Finally, the column identifying the samples must be specified.
 
 #### Example
 
@@ -123,5 +123,5 @@ if `--hmm` was specified HMM segmentation outputs will go to a `hmm/` directory:
 - `tumor_subclusters.tsv.gz`: subcluster labels for the state HMM clustering if `--hmm-by=subcluster` (default)
 
 <br>
-<img src="https://raw.githubusercontent.com/Computational-Immunogenomics/SwiftCNV/main/docs/_static/images/swiftcnv_heatmap.png" alt="swiftcnv_heatmap" align="right" width="720">
+<img src="https://raw.githubusercontent.com/Computational-Immunogenomics/SwiftCNV/main/docs/_static/images/swiftcnv_heatmap.png" alt="swiftcnv_heatmap" align="center" width="750">
 
