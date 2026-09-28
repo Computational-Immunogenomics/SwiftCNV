@@ -16,6 +16,7 @@ dependencies = [
     "scikit-learn",
     "anndata",
     "matplotlib",
+    "kneed"
 ]
 
 authors = [
@@ -37,6 +38,7 @@ tutorial = [
     "ipykernel",
     "leidenalg",
     "requests",
+    "kneed"
 ]
 
 [tool.setuptools.packages.find]
