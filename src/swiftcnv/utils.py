@@ -1522,7 +1522,7 @@ def plot_cnv_by_sample(adata, cell_type_key='cell_type', group_key='sample', cnv
 		pdf.close()
 
 
-def plot_CNV_density(adata, sample_key, sample_name=None, show=True):
+def plot_CNV_density(adata, sample_key, sample_name=None, show=True, figsize=(12,6)):
 	"""
 	Plots malignancy scores distributions per sample.
 	
@@ -1547,7 +1547,7 @@ def plot_CNV_density(adata, sample_key, sample_name=None, show=True):
 		samples = adata.obs[sample_key].unique()
 
 	num_samples = len(samples)
-	fig = plt.figure(figsize=(14, 6 * num_samples))
+	fig = plt.figure(figsize=(figsize[0], figsize[1] * num_samples))
 
 	# Add vertical spacing (hspace) between sample rows
 	row_subfigs = fig.subfigures(nrows=num_samples, ncols=1, hspace=0.15)
