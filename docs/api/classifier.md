@@ -1,7 +1,7 @@
 # Malignant Classifier
 
 ```{eval-rst}
-.. module:: swiftcnv
+.. module:: classifier
    :no-index:
 
 .. autosummary::
