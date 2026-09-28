@@ -34,13 +34,52 @@ logger = logging.getLogger('SwiftCNV')
 immune_gene_pattern = r'^(HLA-|IGH|IGK|IGL)'
 
 
+def create_cell_annotation(adata, cell_type_key, sample_key, reference_cells: list, sample_type_key = None, outdir = None, filename = None):
+
+    if cell_type_key not in adata.obs.columns:
+        raise KeyError(f"'{cell_type_key}' not found in adata.obs columns.")
+
+    if sample_key not in adata.obs.columns:
+        raise KeyError(f"'{sample_key}' not found in adata.obs columns.")
+
+    if sample_type_key is not None:
+        if sample_type_key not in adata.obs.columns:
+            raise KeyError(f"'{sample_type_key}' not found in adata.obs columns.")
+
+    not_in_adata = [cell_type for cell_type in reference_cells if cell_type not in adata.obs[cell_type_key].unique().tolist()]
+
+    if not_in_adata:
+        print(f'Warning: some are reference cell types are not in adata {not_in_adata}')
+
+    # Reference cells are set as normal
+    adata.obs['reference'] = adata.obs[cell_type_key].isin(reference_cells)
+
+    if sample_type_key:
+
+        adata.obs[sample_type_key] = adata.obs[sample_type_key].astype(str).str.lower()
+
+        # Set all the cells from normal samples as reference
+        normal_cells = adata.obs[adata.obs[sample_type_key] == 'normal'].index.tolist()
+
+        adata.obs.loc[normal_cells, 'reference'] = True
+
+
+    annotation = pd.DataFrame({
+        'cell_name': adata.obs.index.values,
+        'reference': adata.obs['reference'].values,
+        'sample': adata.obs[sample_key].values
+    })
+    
+    return annotation
+
+
 def get_cell_order(df, counts, cell_names, column='reference', vals=None, sample_col=None, sep='\t'):
 	'''Build cell_order dataframe and filter matrix to the common cells.
 
 	Parameters
 	----------
 	df : str or pandas.DataFrame
-		Dataframe to get cellnames, reference status and sample values
+		Dataframe to get cell names, reference status and sample values
 	counts : numpy.ndarray or scipy.sparse matrix
 		Input matrix (cells x genes)
 	cell_names : list-like

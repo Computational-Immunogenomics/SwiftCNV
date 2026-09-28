@@ -7,3 +7,4 @@ Tutorials
 
    notebooks/swiftcnv_tutorial.ipynb
    notebooks/malignant_classification.ipynb
+   notebooks/advance_usage.ipynb
