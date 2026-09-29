@@ -37,25 +37,26 @@ logger = logging.getLogger('SwiftCNV')
 
 
 class MalignantClassifier:
+    '''Malignant cell classifier.
+
+    Parameters
+    ----------
+    adata : anndata.AnnData
+        Anndata object used as input for SwiftCNV
+    sample_key : str, default 'sample'
+        Column in `adata.obs` defining sample identifiers.
+    cell_type_key : str, default 'cell_type'
+        Key of the obs layer where cell annotations are stored.
+    cell_of_origin : str or list, default None
+        Cell type(s) of origin of the tumor cells.
+    sample_type_key : str, default 'sample_type'
+        Column in `adata.obs` where sample type is defined (either "normal" or "tumor").
+    outdir : str, default None
+        Path where the output files will be stored.
+    '''
+    
     def __init__(self, adata, sample_key='sample', cell_type_key='cell_type', 
                  cell_of_origin=None, sample_type_key='sample_type', outdir=None):
-        '''Malignant cell classifier.
-
-        Parameters
-        ----------
-        adata : anndata.AnnData
-            Anndata object used as input for SwiftCNV
-	    sample_key : str, default 'sample'
-		    Column in `adata.obs` defining sample identifiers.
-        cell_type_key : str, default 'cell_type'
-            Key of the obs layer where cell annotations are stored.
-        cell_of_origin : str or list, default None
-            Cell type(s) of origin of the tumor cells.
-        sample_type_key : str, default 'sample_type'
-		    Column in `adata.obs` where sample type is defined (either "normal" or "tumor").
-        outdir : str, default None
-            Path where the output files will be stored.
-        '''
 
         self.adata = adata 
         self.sample_key = sample_key
