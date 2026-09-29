@@ -1,7 +1,8 @@
-swiftcnv.SwiftCNV
-=================
+{{ fullname | escape | underline }}
 
-.. currentmodule:: swiftcnv
+.. currentmodule:: {{ module }}
 
-.. autoclass:: SwiftCNV
-   :members: run, plot
+.. autoclass:: {{ objname }}
+   :members:
+   :undoc-members:
+   :show-inheritance:

@@ -58,6 +58,7 @@ extensions = [
     *[p.stem for p in (HERE / "extensions").glob("*.py")],
 ]
 
+add_module_names = False
 autosummary_generate = True
 autodoc_member_order = "groupwise"
 default_role = "literal"
